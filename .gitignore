@@ -1,0 +1,38 @@
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+*.tfplan
+primary-aws/terraform/backend.hcl
+primary-aws/terraform/ci.auto.tfvars.json
+primary-aws/terraform/tf.plan
+primary-aws/terraform/tf.plan.json
+**/group_vars/all.yml
+**/group_vars/delta.yml
+**/inventory/*.yml
+!**/inventory/*.example.yml
+validator_keys/
+__pycache__/
+*.pyc
+**/evidence/actual/
+approval.token
+jwt.hex
+*.pem
+
+## ── 작업 폴더 안의 로컬 전용 자산: 저장소에는 올리지 않는다 ─────────────
+# lab.env  : 실값(계정 ID·주소) — 실무의 .env와 같은 취급
+# reference/: 강사 참조본 clone(별도 git 저장소) — 복붙 원본일 뿐 내 코드가 아니다
+lab.env
+/reference/
+
+## ── 교재·문서 자료: 로컬 실습에는 그대로 쓰고 저장소에는 올리지 않는다 ─────
+# CI 필수 3종(README.md, primary-aws/bootstrap/cicd/README.md,
+# primary-aws/bootstrap/cicd/recovery/RECOVERY.md)은 제외 대상이 아니다.
+/commands/
+/PART-01-aws-identity-center-sso-guide.md
+
+standby-aws/ansible/inventory/hosts.yml
+standby-aws/ansible/group_vars/all.yml
+standby-aws/terraform/*.tfvars
+standby-aws/terraform/*.tfplan
+standby-aws/terraform/tf.plan*
