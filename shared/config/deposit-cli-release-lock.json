@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "repository": "ethstaker/ethstaker-deposit-cli",
+  "version": "1.3.0",
+  "build_commit": "d8016bc",
+  "platform": "linux-amd64",
+  "archive_name": "ethstaker_deposit-cli-d8016bc-linux-amd64.tar.gz",
+  "archive_url": "https://github.com/ethstaker/ethstaker-deposit-cli/releases/download/v1.3.0/ethstaker_deposit-cli-d8016bc-linux-amd64.tar.gz",
+  "sha256": "89ecdfd5bb312c723b1feb7e09762be2510fd75df03d91876fad7f247b7238f2",
+  "executable": "ethstaker_deposit-cli-d8016bc-linux-amd64/deposit"
+}
