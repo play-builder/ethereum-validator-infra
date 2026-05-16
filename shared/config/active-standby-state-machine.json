@@ -1,0 +1,81 @@
+{
+  "schema_version": "active-standby-machine-v1",
+  "authority": "HUMAN_APPROVED_LOCAL_ONLY",
+  "operational_states": ["S0", "S1", "S2", "S3", "S4"],
+  "modes": [
+    "NORMAL",
+    "F8_RETRY_ONLY",
+    "F8_CONTAINMENT_ONLY",
+    "F8_PRIME_RETRY_ONLY",
+    "F8_PRIME_CONTAINMENT_ONLY"
+  ],
+  "retry_max_seconds": 3600,
+  "transitions": [
+    {"event": "INCIDENT_SIGNAL", "from": "S0", "to": "S1", "required_mode": "NORMAL"},
+    {"event": "SOURCE_RETAINED", "from": "S1", "to": "S0", "required_mode": "NORMAL"},
+    {"event": "F0_APPROVED", "from": "S1", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F1_PASS", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F2_PASS", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F3_PASS", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F4_PASS", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F5_PASS", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F6_PASS", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F7_PASS", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F8_RETRY_ENTER", "from": "S2", "to": "S2", "required_mode": "NORMAL"},
+    {"event": "F8_COMPLETE", "from": "S2", "to": "S3", "required_mode": "NORMAL|F8_RETRY_ONLY"},
+    {"event": "F8_RETRY_CONTAIN_ENTER", "from": "S2", "to": "S2", "required_mode": "F8_RETRY_ONLY"},
+    {"event": "F8_RETRY_ABORT_CONTAINED", "from": "S2", "to": "S2", "required_mode": "F8_CONTAINMENT_ONLY"},
+    {"event": "FAILBACK_APPROVED", "from": "S3", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F3_PRIME_PASS", "from": "S4", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F1_PRIME_PASS", "from": "S4", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F2_PRIME_PASS", "from": "S4", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F5_PRIME_PASS", "from": "S4", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F6_PRIME_PASS", "from": "S4", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F7_PRIME_PASS", "from": "S4", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F8_PRIME_RETRY_ENTER", "from": "S4", "to": "S4", "required_mode": "NORMAL"},
+    {"event": "F8_PRIME_COMPLETE", "from": "S4", "to": "S0", "required_mode": "NORMAL|F8_PRIME_RETRY_ONLY"},
+    {"event": "F8_PRIME_RETRY_CONTAIN_ENTER", "from": "S4", "to": "S4", "required_mode": "F8_PRIME_RETRY_ONLY"},
+    {"event": "F8_PRIME_RETRY_ABORT_CONTAINED", "from": "S4", "to": "S4", "required_mode": "F8_PRIME_CONTAINMENT_ONLY"}
+  ],
+  "prime_gate_order": [
+    "F3_PRIME_PASS",
+    "F1_PRIME_PASS",
+    "F2_PRIME_PASS",
+    "F5_PRIME_PASS",
+    "F6_PRIME_PASS",
+    "F7_PRIME_PASS"
+  ],
+  "retry_allowed_mutations": ["FINAL_EVIDENCE_WRITE"],
+  "retry_forbidden_mutations": [
+    "KEY_MUTATION",
+    "SLASHING_PROTECTION_MUTATION",
+    "SIGNER_MUTATION"
+  ],
+  "containment_allowed_mutations": [
+    "STOP",
+    "MASK",
+    "FRESH_DESCENDANT_SP_EXPORT",
+    "FRESH_DESCENDANT_SP_PRESERVE",
+    "RESEAL",
+    "HARD_FENCE",
+    "EVIDENCE_WRITE"
+  ],
+  "containment_permanently_forbidden_mutations": [
+    "START",
+    "UNMASK",
+    "KEY_IMPORT",
+    "SLASHING_PROTECTION_IMPORT",
+    "ANCESTOR_RESTORE",
+    "EVIDENCE_DELETE"
+  ],
+  "retry_entry_evidence": {
+    "F8_RETRY_ENTER": ["AWS_FENCE_FRESH", "STANDBY_SOLE_SIGNER"],
+    "F8_PRIME_RETRY_ENTER": ["STANDBY_HARD_FENCE_FRESH", "AWS_SOLE_SIGNER"]
+  },
+  "failback": {
+    "evidence": "STANDBY_SIGNING_SOAK_60M",
+    "duration_seconds": 3600,
+    "sample_count": 13,
+    "distinct_approver_count": 2
+  }
+}

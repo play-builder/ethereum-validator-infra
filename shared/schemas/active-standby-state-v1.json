@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "active-standby-state-v1.json",
+  "title": "Active-Standby Operational State Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "from_state",
+    "to_state",
+    "transition",
+    "mode",
+    "incident_id",
+    "pubkey",
+    "lease_owner",
+    "lease_purpose",
+    "issued_at",
+    "lease_expires_at",
+    "retry_deadline",
+    "allowed_mutations",
+    "last_completed_gate",
+    "evidence_hashes",
+    "state_version",
+    "no_go_reason",
+    "consumed_emergency_idempotency_keys"
+  ],
+  "properties": {
+    "schema_version": {"const": "active-standby-state-v1"},
+    "from_state": {"enum": ["S0", "S1", "S2", "S3", "S4"]},
+    "to_state": {"enum": ["S0", "S1", "S2", "S3", "S4"]},
+    "transition": {"type": "string", "minLength": 1},
+    "mode": {
+      "enum": [
+        "NORMAL",
+        "F8_RETRY_ONLY",
+        "F8_CONTAINMENT_ONLY",
+        "F8_PRIME_RETRY_ONLY",
+        "F8_PRIME_CONTAINMENT_ONLY"
+      ]
+    },
+    "incident_id": {"type": "string", "pattern": "^INC-[A-Za-z0-9][A-Za-z0-9._-]{2,63}$"},
+    "pubkey": {"type": "string", "pattern": "^0x[0-9a-f]{96}$"},
+    "lease_owner": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
+    "lease_purpose": {"enum": ["OPERATIONAL_TRANSITION", "EMERGENCY_CONTAINMENT"]},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "lease_expires_at": {"type": "string", "format": "date-time"},
+    "retry_deadline": {"type": ["string", "null"], "format": "date-time"},
+    "allowed_mutations": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "last_completed_gate": {"type": ["string", "null"]},
+    "evidence_hashes": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    },
+    "state_version": {"type": "integer", "minimum": 0},
+    "no_go_reason": {
+      "enum": [null, "F8_RETRY_EXPIRED", "F8_RETRY_FRESHNESS_LOST"]
+    },
+    "consumed_emergency_idempotency_keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"}
+    }
+  }
+}
