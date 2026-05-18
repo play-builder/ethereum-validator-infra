@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "incident-classification-v1.json",
+  "title": "Failover Incident Classification Input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "incident_id",
+    "incident_type",
+    "primary_execution_client",
+    "standby_execution_client",
+    "affected_sites",
+    "hard_fence_evidence_hash",
+    "change_id",
+    "approval_evidence_hash",
+    "approvers"
+  ],
+  "properties": {
+    "schema_version": {"const": "incident-classification-v1"},
+    "incident_id": {"type": "string", "pattern": "^INC-[A-Za-z0-9][A-Za-z0-9._-]{2,63}$"},
+    "incident_type": {
+      "enum": ["PLANNED_DRILL", "SITE_FAILURE", "COMMON_CLIENT_FAILURE", "UNKNOWN"]
+    },
+    "primary_execution_client": {"type": "string", "minLength": 1},
+    "standby_execution_client": {"type": "string", "minLength": 1},
+    "affected_sites": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["primary-aws", "standby-standby"]}
+    },
+    "hard_fence_evidence_hash": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "change_id": {"type": ["string", "null"]},
+    "approval_evidence_hash": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "approvers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"}
+    }
+  }
+}

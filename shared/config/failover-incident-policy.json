@@ -1,0 +1,25 @@
+{
+  "schema_version": "failover-incident-policy-v1",
+  "outputs": [
+    "ALLOW_PLANNED_DRILL",
+    "ALLOW_SITE_FAILURE_REVIEW",
+    "NO_GO_COMMON_CLIENT",
+    "NO_GO_UNCLASSIFIED"
+  ],
+  "incident_types": [
+    "PLANNED_DRILL",
+    "SITE_FAILURE",
+    "COMMON_CLIENT_FAILURE",
+    "UNKNOWN"
+  ],
+  "common_client": "nethermind",
+  "planned_drill": {
+    "change_id_pattern": "^CHG-[0-9]{4}-[0-9]{4,}$",
+    "distinct_approver_count": 2,
+    "approval_hash_algorithm": "sha256"
+  },
+  "site_failure": {
+    "hard_fence_required": true,
+    "result_is_review_only": true
+  }
+}
