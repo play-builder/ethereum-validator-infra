@@ -8,3 +8,9 @@ variable "node_permissions_boundary_arn" {
     error_message = "node_permissions_boundary_arn must be an IAM managed-policy ARN from the CI/CD bootstrap stack."
   }
 }
+
+variable "param_prefix_override" {
+  description = "SSM 파라미터 prefix 강제 지정(빈 값이면 /eth-staking/<network>). R3: IAM과 SSM이 같은 local에서 파생된다."
+  type        = string
+  default     = ""
+}
