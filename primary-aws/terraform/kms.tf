@@ -151,3 +151,23 @@ data "aws_iam_policy_document" "keystore" {
     }
   }
 }
+
+resource "aws_kms_key" "keystore" {
+  description             = "${local.project}/${var.network}: keystore staging envelope (primary region)"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.keystore.json
+  tags = merge(local.common_tags, {
+    Purpose = "primary-keystore-envelope"
+  })
+}
+
+resource "aws_kms_alias" "keystore_primary" {
+  name          = local.kms_alias_primary
+  target_key_id = aws_kms_key.keystore.key_id
+}
+
+resource "aws_kms_alias" "keystore_docs_compat" {
+  name          = local.kms_alias_docs
+  target_key_id = aws_kms_key.keystore.key_id
+}
