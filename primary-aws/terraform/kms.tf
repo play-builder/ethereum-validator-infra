@@ -171,3 +171,18 @@ resource "aws_kms_alias" "keystore_docs_compat" {
   name          = local.kms_alias_docs
   target_key_id = aws_kms_key.keystore.key_id
 }
+
+# 주노드 인스턴스는 primary-region keystore 키의 Decrypt만 (recovery 키는 절대 아님 —
+# recovery 복호는 운영자 principal의 MFA 세션에서만 일어난다. RB-01 F4)
+resource "aws_iam_role_policy" "kms_keystore_decrypt" {
+  name = "kms-keystore-decrypt"
+  role = aws_iam_role.node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["kms:Decrypt"]
+      Resource = aws_kms_key.keystore.arn
+    }]
+  })
+}
