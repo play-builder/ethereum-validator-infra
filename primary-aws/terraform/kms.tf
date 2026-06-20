@@ -152,6 +152,104 @@ data "aws_iam_policy_document" "keystore" {
   }
 }
 
+data "aws_iam_policy_document" "recovery" {
+  statement {
+    sid       = "AllowTerraformApplyRoleAdministration"
+    effect    = "Allow"
+    actions   = local.kms_administration_actions
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.terraform_apply_role_arn]
+    }
+  }
+
+  statement {
+    sid       = "AllowStableKmsBreakGlassRoleAdministration"
+    effect    = "Allow"
+    actions   = local.kms_administration_actions
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:PrincipalArn"
+      values   = [var.kms_break_glass_role_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
+  statement {
+    sid       = "AllowTerraformPlanRoleReadOnly"
+    effect    = "Allow"
+    actions   = ["kms:DescribeKey", "kms:GetKeyPolicy", "kms:GetKeyRotationStatus", "kms:ListResourceTags"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.terraform_plan_role_arn]
+    }
+  }
+
+  statement {
+    sid       = "AllowOperator1SealRecoveryKey"
+    effect    = "Allow"
+    actions   = ["kms:Encrypt", "kms:DescribeKey"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [local.kms_account_root_principal]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:PrincipalArn"
+      values   = [local.kms_seal_operator_role_arn_pattern]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
+  statement {
+    sid       = "AllowOperator2UnsealRecoveryKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:DescribeKey"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [local.kms_account_root_principal]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:PrincipalArn"
+      values   = [local.kms_unseal_operator_role_arn_pattern]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
 resource "aws_kms_key" "keystore" {
   description             = "${local.project}/${var.network}: keystore staging envelope (primary region)"
   deletion_window_in_days = 30
