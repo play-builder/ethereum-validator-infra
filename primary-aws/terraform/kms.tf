@@ -270,6 +270,25 @@ resource "aws_kms_alias" "keystore_docs_compat" {
   target_key_id = aws_kms_key.keystore.key_id
 }
 
+# A2 wrap-A: 주노드와 다른 리전의 복구 키. Operator 1은 Encrypt로 암호화하고
+# Operator 2는 별도 SSO session의 Decrypt로만 복구 리허설을 수행한다.
+resource "aws_kms_key" "recovery" {
+  provider                = aws.recovery
+  description             = "${local.project}/${var.network}: dual-envelope wrap-A (recovery region)"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.recovery.json
+  tags = merge(local.common_tags, {
+    Purpose = "recovery-keystore-envelope"
+  })
+}
+
+resource "aws_kms_alias" "recovery" {
+  provider      = aws.recovery
+  name          = "${local.kms_alias_primary}-recovery"
+  target_key_id = aws_kms_key.recovery.key_id
+}
+
 # 주노드 인스턴스는 primary-region keystore 키의 Decrypt만 (recovery 키는 절대 아님 —
 # recovery 복호는 운영자 principal의 MFA 세션에서만 일어난다. RB-01 F4)
 resource "aws_iam_role_policy" "kms_keystore_decrypt" {
