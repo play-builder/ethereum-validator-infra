@@ -19,3 +19,15 @@ resource "aws_s3_bucket_versioning" "staging" {
   bucket = aws_s3_bucket.staging[0].id
   versioning_configuration { status = "Enabled" }
 }
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "staging" {
+  count  = var.enable_staging_bucket ? 1 : 0
+  bucket = aws_s3_bucket.staging[0].id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.keystore.arn
+    }
+    bucket_key_enabled = true
+  }
+}
