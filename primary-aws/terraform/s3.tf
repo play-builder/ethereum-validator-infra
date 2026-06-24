@@ -31,3 +31,79 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "staging" {
     bucket_key_enabled = true
   }
 }
+
+data "aws_iam_policy_document" "staging" {
+  count = var.enable_staging_bucket ? 1 : 0
+
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.staging[0].arn, "${aws_s3_bucket.staging[0].arn}/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid           = "DenyWritesOutsideStagedPrefix"
+    effect        = "Deny"
+    actions       = ["s3:PutObject"]
+    not_resources = ["${aws_s3_bucket.staging[0].arn}/staged/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "DenyStagedWritesWithoutSseKms"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.staging[0].arn}/staged/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+  }
+
+  statement {
+    sid       = "DenyStagedWritesWithWrongKmsKey"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.staging[0].arn}/staged/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "ArnNotEqualsIfExists"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = [aws_kms_key.keystore.arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "staging" {
+  count  = var.enable_staging_bucket ? 1 : 0
+  bucket = aws_s3_bucket.staging[0].id
+  policy = data.aws_iam_policy_document.staging[0].json
+}
