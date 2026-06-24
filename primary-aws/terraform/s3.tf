@@ -107,3 +107,18 @@ resource "aws_s3_bucket_policy" "staging" {
   bucket = aws_s3_bucket.staging[0].id
   policy = data.aws_iam_policy_document.staging[0].json
 }
+
+# R8: 스테이징 bucket read-only, 전용 prefix만 — node role 정책은 bucket과 같은 슬라이스에 둔다.
+resource "aws_iam_role_policy" "s3_staging_read" {
+  count = var.enable_staging_bucket ? 1 : 0
+  name  = "s3-staging-read"
+  role  = aws_iam_role.node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject"]
+      Resource = "${aws_s3_bucket.staging[0].arn}/staged/*"
+    }]
+  })
+}
