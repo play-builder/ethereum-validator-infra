@@ -39,3 +39,15 @@ resource "aws_instance" "node" {
     ignore_changes = [ami] # AMI 갱신은 계획된 재구축 change record로만
   }
 }
+
+# 고정 공인 IP — 인스턴스 교체(시나리오 A 복구) 시에도 주소가 유지되도록
+# eip와 연결을 compute 슬라이스에서 함께 관리한다.
+resource "aws_eip" "node" {
+  domain = "vpc"
+  tags   = { Name = "${local.project}-${var.network}-node" }
+}
+
+resource "aws_eip_association" "node" {
+  instance_id   = aws_instance.node.id
+  allocation_id = aws_eip.node.id
+}
