@@ -26,3 +26,17 @@ resource "aws_ebs_volume" "validator_state" {
     Role = "slashing-protection"
   }
 }
+
+resource "aws_volume_attachment" "chaindata" {
+  device_name                    = "/dev/sdf"
+  volume_id                      = aws_ebs_volume.chaindata.id
+  instance_id                    = aws_instance.node.id
+  stop_instance_before_detaching = true
+}
+
+resource "aws_volume_attachment" "validator_state" {
+  device_name                    = "/dev/sdg"
+  volume_id                      = aws_ebs_volume.validator_state.id
+  instance_id                    = aws_instance.node.id
+  stop_instance_before_detaching = true
+}
