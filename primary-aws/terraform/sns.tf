@@ -16,3 +16,17 @@ resource "aws_sns_topic_subscription" "operators" {
   protocol  = "email"
   endpoint  = each.value
 }
+
+# Alertmanager(sns_configs)가 경보를 게시할 최소 권한 — 대상 토픽 하나로 한정
+resource "aws_iam_role_policy" "sns_publish_alerts" {
+  name = "sns-publish-alerts"
+  role = aws_iam_role.node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sns:Publish"]
+      Resource = aws_sns_topic.alerts.arn
+    }]
+  })
+}
