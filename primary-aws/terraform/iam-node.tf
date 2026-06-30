@@ -29,3 +29,17 @@ resource "aws_iam_role_policy" "ssm_params" {
     }]
   })
 }
+
+resource "aws_iam_role_policy" "cloudwatch_metrics" {
+  name = "cloudwatch-heartbeat"
+  role = aws_iam_role.node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = ["cloudwatch:PutMetricData"]
+      Resource  = "*"
+      Condition = { StringEquals = { "cloudwatch:namespace" = "EthFailover/${var.network}" } }
+    }]
+  })
+}

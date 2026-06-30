@@ -7,3 +7,15 @@ variable "operator_alert_emails" {
     error_message = "알림 수신자는 0명(미구성) 또는 2명 이상 — 1인 단일점 금지."
   }
 }
+
+variable "enable_deadman_alarm" {
+  description = "P11에서 true로 전환. node 가동 전 활성화하면 즉시 울린다."
+  type        = bool
+  default     = false
+}
+
+variable "host_id" {
+  description = "하트비트 지표의 Host 차원 (ansible host_id와 일치)."
+  type        = string
+  default     = "aws-primary-01"
+}
