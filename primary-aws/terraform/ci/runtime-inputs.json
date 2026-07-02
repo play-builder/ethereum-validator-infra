@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "repository": "play-builder/ethereum-validator-infra",
+  "repository_owner_id": "42942042",
+  "repository_id": "1166764167",
+  "environment": "hoodi-testnet-dev",
+  "aws": {
+    "account_id": "REPLACE_WITH_AWS_ACCOUNT_ID",
+    "region": "ap-northeast-2",
+    "state_key": "hoodi-testnet-dev/terraform.tfstate",
+    "plan_role_arn": "REPLACE_WITH_TERRAFORM_PLAN_ROLE_ARN",
+    "apply_role_arn": "REPLACE_WITH_TERRAFORM_APPLY_ROLE_ARN",
+    "kms_break_glass_role_arn": "REPLACE_WITH_KMS_BREAK_GLASS_ROLE_ARN",
+    "state_bucket": "REPLACE_WITH_STATE_BUCKET",
+    "state_kms_key_arn": "REPLACE_WITH_STATE_KMS_KEY_ARN",
+    "plan_artifact_bucket": "REPLACE_WITH_PLAN_ARTIFACT_BUCKET",
+    "plan_artifact_kms_key_arn": "REPLACE_WITH_PLAN_ARTIFACT_KMS_KEY_ARN",
+    "node_permissions_boundary_arn": "REPLACE_WITH_NODE_PERMISSIONS_BOUNDARY_ARN"
+  },
+  "terraform": {
+    "network": "hoodi",
+    "kms_recovery_region": "eu-central-1",
+    "key_pair_name": "eth-failover-hoodi",
+    "admin_cidrs": [
+      "REPLACE_WITH_GLOBAL_IPV4/32"
+    ],
+    "backup_peer_public_ip": null,
+    "sso_operator_permission_sets": [
+      "testnet_operator_01_builder",
+      "testnet_operator_02_approver"
+    ],
+    "operator_alert_emails": [
+      "playbuilder47+testnet_op1@gmail.com",
+      "playbuilder47+testnet_op2@gmail.com"
+    ],
+    "enable_deadman_alarm": false,
+    "enable_staging_bucket": true,
+    "region": "ap-northeast-2"
+  }
+}
