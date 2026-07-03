@@ -1,0 +1,19 @@
+# 복사: cp terraform.tfvars.example terraform.tfvars  (tfvars는 .gitignore 대상)
+network                 = "hoodi"
+region                  = "ap-northeast-2"
+kms_recovery_region     = "eu-central-1"
+node_permissions_boundary_arn = "arn:aws:iam::123456789012:policy/hoodi-testnet-dev-node-permissions-boundary"
+terraform_plan_role_arn = "arn:aws:iam::123456789012:role/hoodi-testnet-dev-TerraformPlanRole"
+terraform_apply_role_arn = "arn:aws:iam::123456789012:role/hoodi-testnet-dev-TerraformApplyRole"
+kms_break_glass_role_arn = "arn:aws:iam::123456789012:role/hoodi-testnet-dev-KmsBreakGlassRole"
+key_pair_name           = "REPLACE-existing-keypair"
+admin_cidrs             = ["203.0.113.10/32"]
+# Standby EC2 공인 IPv4가 아직 확정되지 않은 초기 상태다. null이면 WireGuard 51820/UDP 인바운드 규칙을 만들지 않는다.
+# Standby EC2 공인 IPv4를 확인한 뒤에는 null을 /32 없이 실제 plain IPv4로 바꾼다.
+backup_peer_public_ip   = null
+chaindata_volume_gb     = 600
+sso_operator_permission_sets = [
+  "testnet_operator_01_builder",
+  "testnet_operator_02_approver",
+]
+operator_alert_emails = ["playbuilder47+testnet_op1@gmail.com", "playbuilder47+testnet_op2@gmail.com"]   # lab.env의 OP1/OP2_EMAIL과 동일하게
