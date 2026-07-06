@@ -1,0 +1,166 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyWorkloadVisibility",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms",
+        "ec2:Describe*",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketVersioning",
+        "sns:ListSubscriptionsByTopic",
+        "sns:ListTopics",
+        "ssm:DescribeParameters",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadTerraformNodeRoleConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::*:role/eth-failover-hoodi-node"
+    },
+    {
+      "Sid": "ReadSsoOperatorRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole"
+      ],
+      "Resource": "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*"
+    },
+    {
+      "Sid": "DescribeTaggedHoodiKeys",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey"
+      ],
+      "Resource": "arn:aws:kms:*:*:key/*",
+      "Condition": {
+        "StringEquals": {
+          "kms:CallerAccount": "${aws:PrincipalAccount}",
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi",
+          "aws:ResourceTag/Managed": "terraform"
+        }
+      }
+    },
+    {
+      "Sid": "SealTaggedRecoveryKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Encrypt"
+      ],
+      "Resource": "arn:aws:kms:*:*:key/*",
+      "Condition": {
+        "StringEquals": {
+          "kms:CallerAccount": "${aws:PrincipalAccount}",
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi",
+          "aws:ResourceTag/Managed": "terraform",
+          "aws:ResourceTag/Purpose": "recovery-keystore-envelope"
+        }
+      }
+    },
+    {
+      "Sid": "ReadOnlyStagedCiphertextArtifacts",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::eth-failover-hoodi-staging-*/staged/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "${aws:PrincipalAccount}"
+        }
+      }
+    },
+    {
+      "Sid": "PublishOnlyEncryptedStagingArtifacts",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::eth-failover-hoodi-staging-*/staged/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "${aws:PrincipalAccount}",
+          "s3:x-amz-server-side-encryption": "aws:kms"
+        },
+        "ArnLike": {
+          "s3:x-amz-server-side-encryption-aws-kms-key-id": "arn:aws:kms:ap-northeast-2:*:key/*"
+        }
+      }
+    },
+    {
+      "Sid": "GenerateOnlyStagingDataKeyViaS3",
+      "Effect": "Allow",
+      "Action": [
+        "kms:GenerateDataKey"
+      ],
+      "Resource": "arn:aws:kms:ap-northeast-2:*:key/*",
+      "Condition": {
+        "StringEquals": {
+          "kms:CallerAccount": "${aws:PrincipalAccount}",
+          "kms:ViaService": "s3.ap-northeast-2.amazonaws.com",
+          "kms:EncryptionContext:aws:s3:arn": "arn:aws:s3:::eth-failover-hoodi-staging-${aws:PrincipalAccount}",
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi",
+          "aws:ResourceTag/Managed": "terraform",
+          "aws:ResourceTag/Purpose": "primary-keystore-envelope"
+        }
+      }
+    },
+    {
+      "Sid": "UpdateExactFeeRecipientRuntimeValue",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:PutParameter"
+      ],
+      "Resource": "arn:aws:ssm:*:*:parameter/eth-staking/hoodi/fee_recipient",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceAccount": "${aws:PrincipalAccount}"
+        }
+      }
+    },
+    {
+      "Sid": "ReadSsmManagedInstanceAndCommandResults",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeInstanceInformation",
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommandInvocations"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "UseAwsRunShellScriptDocument",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ssm:*::document/AWS-RunShellScript"
+    },
+    {
+      "Sid": "RunCommandOnlyOnTaggedHoodiNodes",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Project": "eth-failover",
+          "ssm:resourceTag/Network": "hoodi",
+          "ssm:resourceTag/Managed": "terraform"
+        }
+      }
+    }
+  ]
+}

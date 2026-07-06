@@ -1,0 +1,69 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyWorkloadVisibility",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms",
+        "ec2:Describe*",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketVersioning",
+        "sns:ListSubscriptionsByTopic",
+        "sns:ListTopics",
+        "ssm:DescribeParameters",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadTerraformNodeRoleConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::*:role/eth-failover-hoodi-node"
+    },
+    {
+      "Sid": "ReadSsoOperatorRoles",
+      "Effect": "Allow",
+      "Action": ["iam:GetRole"],
+      "Resource": "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*"
+    },
+    {
+      "Sid": "DescribeTaggedHoodiKeys",
+      "Effect": "Allow",
+      "Action": ["kms:DescribeKey"],
+      "Resource": "arn:aws:kms:*:*:key/*",
+      "Condition": {
+        "StringEquals": {
+          "kms:CallerAccount": "${aws:PrincipalAccount}",
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi",
+          "aws:ResourceTag/Managed": "terraform"
+        }
+      }
+    },
+    {
+      "Sid": "UnsealTaggedRecoveryKey",
+      "Effect": "Allow",
+      "Action": ["kms:Decrypt"],
+      "Resource": "arn:aws:kms:*:*:key/*",
+      "Condition": {
+        "StringEquals": {
+          "kms:CallerAccount": "${aws:PrincipalAccount}",
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi",
+          "aws:ResourceTag/Managed": "terraform",
+          "aws:ResourceTag/Purpose": "recovery-keystore-envelope"
+        }
+      }
+    }
+  ]
+}
