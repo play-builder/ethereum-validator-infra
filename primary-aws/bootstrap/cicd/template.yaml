@@ -1,0 +1,329 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "One-time GitHub OIDC, Terraform CI roles, state/artifact storage, imported node SSH public key, and node permissions boundary for hoodi-testnet-dev.",
+  "Parameters": {
+    "GitHubRepository": {
+      "Type": "String",
+      "Description": "Exact GitHub repository in OWNER/REPOSITORY form.",
+      "AllowedPattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "ConstraintDescription": "must be an exact OWNER/REPOSITORY value"
+    },
+    "GitHubRepositoryOwnerId": {
+      "Type": "String",
+      "Description": "Immutable numeric GitHub owner ID returned by the repositories API.",
+      "AllowedPattern": "^[0-9]+$",
+      "ConstraintDescription": "must be the numeric owner ID for GitHubRepository"
+    },
+    "GitHubRepositoryId": {
+      "Type": "String",
+      "Description": "Immutable numeric GitHub repository ID returned by the repositories API.",
+      "AllowedPattern": "^[0-9]+$",
+      "ConstraintDescription": "must be the numeric repository ID for GitHubRepository"
+    },
+    "GitHubEnvironment": {
+      "Type": "String",
+      "Default": "hoodi-testnet-dev",
+      "AllowedValues": [
+        "hoodi-testnet-dev"
+      ],
+      "Description": "Exact protected GitHub Environment allowed to assume the apply role."
+    },
+    "GitHubTeardownEnvironment": {
+      "Type": "String",
+      "Default": "hoodi-testnet-dev-teardown",
+      "AllowedValues": [
+        "hoodi-testnet-dev-teardown"
+      ],
+      "Description": "Exact separately protected GitHub Environment allowed to assume the same apply role for approved teardown."
+    },
+    "ExistingGithubOidcProviderArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Optional ARN of an existing token.actions.githubusercontent.com provider. Blank creates this stack's provider."
+    },
+    "TerraformPlanRoleName": {
+      "Type": "String",
+      "Default": "hoodi-testnet-dev-TerraformPlanRole",
+      "AllowedPattern": "^[A-Za-z0-9+=,.@_-]{1,64}$"
+    },
+    "TerraformApplyRoleName": {
+      "Type": "String",
+      "Default": "hoodi-testnet-dev-TerraformApplyRole",
+      "AllowedPattern": "^[A-Za-z0-9+=,.@_-]{1,64}$"
+    },
+    "NodeRoleName": {
+      "Type": "String",
+      "Default": "eth-failover-hoodi-node",
+      "AllowedPattern": "^[A-Za-z0-9+=,.@_-]{1,64}$"
+    },
+    "NodeInstanceProfileName": {
+      "Type": "String",
+      "Default": "eth-failover-hoodi-node",
+      "AllowedPattern": "^[A-Za-z0-9+=,.@_-]{1,128}$"
+    },
+    "NodeSshKeyPairName": {
+      "Type": "String",
+      "Default": "eth-failover-hoodi",
+      "AllowedValues": [
+        "eth-failover-hoodi"
+      ],
+      "Description": "Exact EC2 key-pair name imported once by this bootstrap stack."
+    },
+    "NodeSshPublicKey": {
+      "Type": "String",
+      "AllowedPattern": "^ssh-ed25519 [A-Za-z0-9+/]{68}( [^\\r\\n]{1,255})?$",
+      "ConstraintDescription": "must be one complete single-line OpenSSH ssh-ed25519 public key; private key material and multiline input are forbidden"
+    },
+    "NodePermissionsBoundaryName": {
+      "Type": "String",
+      "Default": "hoodi-testnet-dev-node-permissions-boundary",
+      "AllowedPattern": "^[A-Za-z0-9+=,.@_-]{1,128}$"
+    },
+    "StateBucketMode": {
+      "Type": "String",
+      "Default": "CREATE",
+      "AllowedValues": [
+        "CREATE",
+        "EXISTING"
+      ],
+      "Description": "CREATE creates a new state bucket. EXISTING only references a separately verified bucket; it never imports or mutates it."
+    },
+    "StateBucketName": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "must be blank in EXISTING mode or a globally unique, DNS-compatible S3 bucket name in CREATE mode"
+    },
+    "ExistingStateBucketName": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Required only in EXISTING mode. The stack does not import, update, or attach a policy to this bucket."
+    },
+    "ExistingStateKmsKeyArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Required only in EXISTING mode; CMK ARN already protecting the existing state bucket."
+    },
+    "StateKey": {
+      "Type": "String",
+      "Default": "hoodi-testnet-dev/terraform.tfstate",
+      "AllowedPattern": "^[A-Za-z0-9!_.*'()/=-]+(?:/[A-Za-z0-9!_.*'()/=-]+)*$"
+    },
+    "PlanArtifactBucketName": {
+      "Type": "String",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "must be a globally unique, DNS-compatible S3 bucket name"
+    },
+    "CloudTrailTrailArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Optional existing regional CloudTrail ARN. When supplied, the plan bucket permits this trail's standard S3 delivery path."
+    }
+  },
+  "Rules": {
+    "ExistingStateBucketRequiresInputs": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "StateBucketMode"
+          },
+          "EXISTING"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "ExistingStateBucketName"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "EXISTING StateBucketMode requires ExistingStateBucketName."
+        },
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "ExistingStateKmsKeyArn"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "EXISTING StateBucketMode requires ExistingStateKmsKeyArn."
+        },
+        {
+          "Assert": {
+            "Fn::Equals": [
+              {
+                "Ref": "StateBucketName"
+              },
+              ""
+            ]
+          },
+          "AssertDescription": "EXISTING StateBucketMode must leave CREATE-only StateBucketName blank."
+        }
+      ]
+    },
+    "CreateStateBucketForbidsExistingInputs": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "StateBucketMode"
+          },
+          "CREATE"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Equals": [
+              {
+                "Ref": "ExistingStateBucketName"
+              },
+              ""
+            ]
+          },
+          "AssertDescription": "CREATE StateBucketMode must not be combined with ExistingStateBucketName."
+        },
+        {
+          "Assert": {
+            "Fn::Equals": [
+              {
+                "Ref": "ExistingStateKmsKeyArn"
+              },
+              ""
+            ]
+          },
+          "AssertDescription": "CREATE StateBucketMode must not be combined with ExistingStateKmsKeyArn."
+        }
+      ]
+    },
+    "CreateStateBucketRequiresName": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "StateBucketMode"
+          },
+          "CREATE"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "StateBucketName"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "CREATE StateBucketMode requires StateBucketName."
+        }
+      ]
+    }
+  },
+  "Conditions": {
+    "CreateGithubOidcProvider": {
+      "Fn::Equals": [
+        {
+          "Ref": "ExistingGithubOidcProviderArn"
+        },
+        ""
+      ]
+    },
+    "CreateStateBucket": {
+      "Fn::Equals": [
+        {
+          "Ref": "StateBucketMode"
+        },
+        "CREATE"
+      ]
+    },
+    "ConfigureCloudTrailDelivery": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "CloudTrailTrailArn"
+            },
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "GithubOidcProvider": {
+      "Type": "AWS::IAM::OIDCProvider",
+      "Condition": "CreateGithubOidcProvider",
+      "Properties": {
+        "Url": "https://token.actions.githubusercontent.com",
+        "ClientIdList": [
+          "sts.amazonaws.com"
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "terraform-cicd"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "AwsAccountId": {
+      "Value": {
+        "Ref": "AWS::AccountId"
+      }
+    },
+    "GithubOidcProviderArn": {
+      "Value": {
+        "Fn::If": [
+          "CreateGithubOidcProvider",
+          {
+            "Fn::GetAtt": [
+              "GithubOidcProvider",
+              "Arn"
+            ]
+          },
+          {
+            "Ref": "ExistingGithubOidcProviderArn"
+          }
+        ]
+      }
+    },
+    "GitHubEnvironment": {
+      "Value": {
+        "Ref": "GitHubEnvironment"
+      }
+    },
+    "GitHubTeardownEnvironment": {
+      "Value": {
+        "Ref": "GitHubTeardownEnvironment"
+      }
+    },
+    "StateKey": {
+      "Value": {
+        "Ref": "StateKey"
+      }
+    }
+  }
+}
