@@ -286,6 +286,403 @@
           }
         ]
       }
+    },
+    "StateKmsKey": {
+      "Type": "AWS::KMS::Key",
+      "Condition": "CreateStateBucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": "SSE-KMS key for Terraform state in hoodi-testnet-dev",
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "EnableAccountRootToDelegateAccess",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    },
+    "PlanArtifactKmsKey": {
+      "Type": "AWS::KMS::Key",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": "SSE-KMS key for Terraform saved-plan artifacts in hoodi-testnet-dev",
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "EnableAccountRootToDelegateAccess",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            },
+            {
+              "Fn::If": [
+                "ConfigureCloudTrailDelivery",
+                {
+                  "Sid": "AllowCloudTrailEncryptAndDescribe",
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "cloudtrail.amazonaws.com"
+                  },
+                  "Action": [
+                    "kms:GenerateDataKey*",
+                    "kms:DescribeKey"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:SourceArn": {
+                        "Ref": "CloudTrailTrailArn"
+                      }
+                    },
+                    "StringLike": {
+                      "kms:EncryptionContext:aws:cloudtrail:arn": {
+                        "Fn::Sub": "arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/*"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Ref": "AWS::NoValue"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "StateBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Condition": "CreateStateBucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Ref": "StateBucketName"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms",
+                "KMSMasterKeyID": {
+                  "Fn::GetAtt": [
+                    "StateKmsKey",
+                    "Arn"
+                  ]
+                }
+              },
+              "BucketKeyEnabled": true
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "terraform-state"
+          }
+        ]
+      }
+    },
+    "PlanArtifactBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Ref": "PlanArtifactBucketName"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms",
+                "KMSMasterKeyID": {
+                  "Fn::GetAtt": [
+                    "PlanArtifactKmsKey",
+                    "Arn"
+                  ]
+                }
+              },
+              "BucketKeyEnabled": true
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "ExpireSavedPlanArtifactsAfterOneDay",
+              "Status": "Enabled",
+              "ExpirationInDays": 1,
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": 1
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "terraform-saved-plan-artifacts"
+          }
+        ]
+      }
+    },
+    "StateBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Condition": "CreateStateBucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Bucket": {
+          "Ref": "StateBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StateBucket",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${StateBucket.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            },
+            {
+              "Sid": "DenyUnencryptedObjectWrites",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "${StateBucket.Arn}/*"
+              },
+              "Condition": {
+                "StringNotEquals": {
+                  "s3:x-amz-server-side-encryption": "aws:kms"
+                }
+              }
+            },
+            {
+              "Sid": "DenyWrongStateKmsKey",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "${StateBucket.Arn}/*"
+              },
+              "Condition": {
+                "StringNotEquals": {
+                  "s3:x-amz-server-side-encryption-aws-kms-key-id": {
+                    "Fn::GetAtt": [
+                      "StateKmsKey",
+                      "Arn"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "PlanArtifactBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Bucket": {
+          "Ref": "PlanArtifactBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "PlanArtifactBucket",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${PlanArtifactBucket.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            },
+            {
+              "Sid": "DenyUnencryptedArtifactWrites",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "${PlanArtifactBucket.Arn}/${GitHubRepository}/*"
+              },
+              "Condition": {
+                "StringNotEquals": {
+                  "s3:x-amz-server-side-encryption": "aws:kms"
+                }
+              }
+            },
+            {
+              "Sid": "DenyWrongArtifactKmsKey",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "${PlanArtifactBucket.Arn}/${GitHubRepository}/*"
+              },
+              "Condition": {
+                "StringNotEquals": {
+                  "s3:x-amz-server-side-encryption-aws-kms-key-id": {
+                    "Fn::GetAtt": [
+                      "PlanArtifactKmsKey",
+                      "Arn"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "RequireCreateOnlyArtifactWrites",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "${PlanArtifactBucket.Arn}/${GitHubRepository}/*"
+              },
+              "Condition": {
+                "Null": {
+                  "s3:if-none-match": "true"
+                }
+              }
+            },
+            {
+              "Fn::If": [
+                "ConfigureCloudTrailDelivery",
+                {
+                  "Sid": "AllowCloudTrailAclCheck",
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "cloudtrail.amazonaws.com"
+                  },
+                  "Action": "s3:GetBucketAcl",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "PlanArtifactBucket",
+                      "Arn"
+                    ]
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:SourceArn": {
+                        "Ref": "CloudTrailTrailArn"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Ref": "AWS::NoValue"
+                }
+              ]
+            },
+            {
+              "Fn::If": [
+                "ConfigureCloudTrailDelivery",
+                {
+                  "Sid": "AllowCloudTrailWriteWhenConfigured",
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "cloudtrail.amazonaws.com"
+                  },
+                  "Action": "s3:PutObject",
+                  "Resource": {
+                    "Fn::Sub": "${PlanArtifactBucket.Arn}/AWSLogs/${AWS::AccountId}/*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:SourceArn": {
+                        "Ref": "CloudTrailTrailArn"
+                      },
+                      "s3:x-amz-acl": "bucket-owner-full-control"
+                    }
+                  }
+                },
+                {
+                  "Ref": "AWS::NoValue"
+                }
+              ]
+            }
+          ]
+        }
+      }
     }
   },
   "Outputs": {
@@ -320,9 +717,75 @@
         "Ref": "GitHubTeardownEnvironment"
       }
     },
+    "StateBucketName": {
+      "Value": {
+        "Fn::If": [
+          "CreateStateBucket",
+          {
+            "Ref": "StateBucket"
+          },
+          {
+            "Ref": "ExistingStateBucketName"
+          }
+        ]
+      }
+    },
+    "StateBucketArn": {
+      "Value": {
+        "Fn::If": [
+          "CreateStateBucket",
+          {
+            "Fn::GetAtt": [
+              "StateBucket",
+              "Arn"
+            ]
+          },
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:s3:::${ExistingStateBucketName}"
+          }
+        ]
+      }
+    },
+    "StateKmsKeyArn": {
+      "Value": {
+        "Fn::If": [
+          "CreateStateBucket",
+          {
+            "Fn::GetAtt": [
+              "StateKmsKey",
+              "Arn"
+            ]
+          },
+          {
+            "Ref": "ExistingStateKmsKeyArn"
+          }
+        ]
+      }
+    },
     "StateKey": {
       "Value": {
         "Ref": "StateKey"
+      }
+    },
+    "PlanArtifactBucketName": {
+      "Value": {
+        "Ref": "PlanArtifactBucket"
+      }
+    },
+    "PlanArtifactBucketArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PlanArtifactBucket",
+          "Arn"
+        ]
+      }
+    },
+    "PlanArtifactKmsKeyArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PlanArtifactKmsKey",
+          "Arn"
+        ]
       }
     }
   }
