@@ -473,6 +473,181 @@
         ]
       }
     },
+    "NodeSshKeyPair": {
+      "Type": "AWS::EC2::KeyPair",
+      "Properties": {
+        "KeyName": {
+          "Ref": "NodeSshKeyPairName"
+        },
+        "KeyType": "ed25519",
+        "PublicKeyMaterial": {
+          "Ref": "NodeSshPublicKey"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "eth-failover"
+          },
+          {
+            "Key": "Network",
+            "Value": "hoodi"
+          },
+          {
+            "Key": "Managed",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "NodePermissionsBoundary": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Ref": "NodePermissionsBoundaryName"
+        },
+        "Description": "Permissions boundary required on the Terraform-managed EC2 node role.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "PublishOnlyHoodiHeartbeat",
+              "Effect": "Allow",
+              "Action": "cloudwatch:PutMetricData",
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "cloudwatch:namespace": "EthFailover/hoodi"
+                }
+              }
+            },
+            {
+              "Sid": "DecryptOnlyPrimaryHoodiKeystoreKeys",
+              "Effect": "Allow",
+              "Action": "kms:Decrypt",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/Project": "eth-failover",
+                  "aws:ResourceTag/Network": "hoodi"
+                }
+              }
+            },
+            {
+              "Sid": "PublishOnlyHoodiAlerts",
+              "Effect": "Allow",
+              "Action": "sns:Publish",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:eth-failover-hoodi-alerts"
+              }
+            },
+            {
+              "Sid": "ReadOnlyHoodiParameters",
+              "Effect": "Allow",
+              "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eth-staking/hoodi/*"
+              }
+            },
+            {
+              "Sid": "ReadOnlyHoodiStagingObjects",
+              "Effect": "Allow",
+              "Action": "s3:GetObject",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::eth-failover-hoodi-staging-${AWS::AccountId}/staged/*"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "KmsBreakGlassRole": {
+      "Type": "AWS::IAM::Role",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "RoleName": "hoodi-testnet-dev-KmsBreakGlassRole",
+        "Description": "Dormant KMS policy recovery role; assumed only by the temporary terraform_cicd_bootstrap_admin Identity Center role.",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowOnlyTerraformCicdBootstrapAdminPermissionSet",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "ArnLike": {
+                  "aws:PrincipalArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_terraform_cicd_bootstrap_admin_*"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "recover-only-tagged-terraform-kms-keys",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "RecoverOnlyTaggedTerraformKmsKeys",
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:CancelKeyDeletion",
+                    "kms:DescribeKey",
+                    "kms:DisableKey",
+                    "kms:DisableKeyRotation",
+                    "kms:EnableKey",
+                    "kms:EnableKeyRotation",
+                    "kms:GetKeyPolicy",
+                    "kms:GetKeyRotationStatus",
+                    "kms:PutKeyPolicy",
+                    "kms:ScheduleKeyDeletion",
+                    "kms:TagResource",
+                    "kms:UntagResource",
+                    "kms:UpdateKeyDescription"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:kms:*:${AWS::AccountId}:key/*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:ResourceTag/Project": "eth-failover",
+                      "aws:ResourceTag/Network": "hoodi",
+                      "aws:ResourceTag/Role": "primary",
+                      "aws:ResourceTag/Managed": "terraform"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "kms-break-glass"
+          }
+        ]
+      }
+    },
     "StateBucketPolicy": {
       "Type": "AWS::S3::BucketPolicy",
       "Condition": "CreateStateBucket",
@@ -707,6 +882,14 @@
         ]
       }
     },
+    "KmsBreakGlassRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "KmsBreakGlassRole",
+          "Arn"
+        ]
+      }
+    },
     "GitHubEnvironment": {
       "Value": {
         "Ref": "GitHubEnvironment"
@@ -785,6 +968,24 @@
         "Fn::GetAtt": [
           "PlanArtifactKmsKey",
           "Arn"
+        ]
+      }
+    },
+    "NodePermissionsBoundaryArn": {
+      "Value": {
+        "Ref": "NodePermissionsBoundary"
+      }
+    },
+    "NodeSshKeyPairName": {
+      "Value": {
+        "Ref": "NodeSshKeyPair"
+      }
+    },
+    "NodeSshKeyFingerprint": {
+      "Value": {
+        "Fn::GetAtt": [
+          "NodeSshKeyPair",
+          "KeyFingerprint"
         ]
       }
     }
