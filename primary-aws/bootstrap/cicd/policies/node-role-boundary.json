@@ -1,0 +1,50 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublishOnlyHoodiHeartbeat",
+      "Effect": "Allow",
+      "Action": "cloudwatch:PutMetricData",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "cloudwatch:namespace": "EthFailover/hoodi"
+        }
+      }
+    },
+    {
+      "Sid": "DecryptOnlyPrimaryHoodiKeystoreKeys",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi"
+        }
+      }
+    },
+    {
+      "Sid": "PublishOnlyHoodiAlerts",
+      "Effect": "Allow",
+      "Action": "sns:Publish",
+      "Resource": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:eth-failover-hoodi-alerts"
+    },
+    {
+      "Sid": "ReadOnlyHoodiParameters",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ],
+      "Resource": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eth-staking/hoodi/*"
+    },
+    {
+      "Sid": "ReadOnlyHoodiStagingObjects",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:${AWS::Partition}:s3:::eth-failover-hoodi-staging-${AWS::AccountId}/staged/*"
+    }
+  ]
+}

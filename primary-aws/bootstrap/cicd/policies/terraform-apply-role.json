@@ -1,0 +1,442 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadAndWriteOnlyStateAndLock",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "${StateBucketArn}/hoodi-testnet-dev/terraform.tfstate",
+        "${StateBucketArn}/hoodi-testnet-dev/standby-terraform.tfstate",
+        "${StateBucketArn}/hoodi-testnet-dev/terraform.tfstate.tflock",
+        "${StateBucketArn}/hoodi-testnet-dev/standby-terraform.tfstate.tflock"
+      ]
+    },
+    {
+      "Sid": "ListOnlyStateBucket",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "${StateBucketArn}",
+      "Condition": {
+        "StringEquals": {
+          "s3:prefix": [
+            "hoodi-testnet-dev/terraform.tfstate",
+            "hoodi-testnet-dev/standby-terraform.tfstate",
+            "hoodi-testnet-dev/terraform.tfstate.tflock",
+            "hoodi-testnet-dev/standby-terraform.tfstate.tflock"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReadExactVersionedPlanArtifacts",
+      "Effect": "Allow",
+      "Action": "s3:GetObjectVersion",
+      "Resource": "${PlanArtifactBucketArn}/${GitHubRepository}/*"
+    },
+    {
+      "Sid": "UseStateAndArtifactKeys",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:Encrypt",
+        "kms:GenerateDataKey"
+      ],
+      "Resource": [
+        "${StateKmsKeyArn}",
+        "${PlanArtifactKmsKeyArn}"
+      ]
+    },
+    {
+      "Sid": "CreateNodeRoleWithRequiredBoundary",
+      "Effect": "Allow",
+      "Action": "iam:CreateRole",
+      "Resource": "${NodeRoleArn}",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "${NodePermissionsBoundaryArn}"
+        }
+      }
+    },
+    {
+      "Sid": "ManageOnlyTerraformNodeRoleAndProfile",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AddRoleToInstanceProfile",
+        "iam:CreateInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:GetInstanceProfile",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:ListRolePolicies",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagInstanceProfile",
+        "iam:TagRole",
+        "iam:UntagInstanceProfile",
+        "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription"
+      ],
+      "Resource": [
+        "${NodeRoleArn}",
+        "${NodeInstanceProfileArn}"
+      ]
+    },
+    {
+      "Sid": "KeepExactNodePermissionsBoundary",
+      "Effect": "Allow",
+      "Action": "iam:PutRolePermissionsBoundary",
+      "Resource": "${NodeRoleArn}",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "${NodePermissionsBoundaryArn}"
+        }
+      }
+    },
+    {
+      "Sid": "PutOnlyNodeInlinePoliciesWithRequiredBoundary",
+      "Effect": "Allow",
+      "Action": "iam:PutRolePolicy",
+      "Resource": "${NodeRoleArn}",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "${NodePermissionsBoundaryArn}"
+        }
+      }
+    },
+    {
+      "Sid": "PassOnlyTheNodeRoleToEc2",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "${NodeRoleArn}",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ec2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "ManageTerraformEc2Resources",
+      "Effect": "Allow",
+      "Action": "ec2:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "CreateOnlyTaggedTerraformKmsKeys",
+      "Effect": "Allow",
+      "Action": "kms:CreateKey",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "eth-failover",
+          "aws:RequestTag/Network": "hoodi",
+          "aws:RequestTag/Role": "primary",
+          "aws:RequestTag/Managed": "terraform",
+          "aws:RequestTag/Purpose": [
+            "primary-keystore-envelope",
+            "recovery-keystore-envelope"
+          ],
+          "kms:KeySpec": "SYMMETRIC_DEFAULT",
+          "kms:KeyUsage": "ENCRYPT_DECRYPT"
+        },
+        "Bool": {
+          "kms:BypassPolicyLockoutSafetyCheck": "false"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Managed",
+            "Network",
+            "Project",
+            "Purpose",
+            "Role"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "TagOnlyNewTerraformKmsKeys",
+      "Effect": "Allow",
+      "Action": "kms:TagResource",
+      "Resource": "arn:${AWS::Partition}:kms:*:${AWS::AccountId}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "eth-failover",
+          "aws:RequestTag/Network": "hoodi",
+          "aws:RequestTag/Role": "primary",
+          "aws:RequestTag/Managed": "terraform",
+          "aws:RequestTag/Purpose": [
+            "primary-keystore-envelope",
+            "recovery-keystore-envelope"
+          ],
+          "kms:CallerAccount": "${AWS::AccountId}",
+          "kms:KeySpec": "SYMMETRIC_DEFAULT",
+          "kms:KeyUsage": "ENCRYPT_DECRYPT"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Managed",
+            "Network",
+            "Project",
+            "Purpose",
+            "Role"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ManageOnlyTaggedTerraformKmsKeys",
+      "Effect": "Allow",
+      "Action": [
+        "kms:CancelKeyDeletion",
+        "kms:DescribeKey",
+        "kms:DisableKey",
+        "kms:DisableKeyRotation",
+        "kms:EnableKey",
+        "kms:EnableKeyRotation",
+        "kms:GetKeyPolicy",
+        "kms:GetKeyRotationStatus",
+        "kms:ListResourceTags",
+        "kms:PutKeyPolicy",
+        "kms:ScheduleKeyDeletion",
+        "kms:UpdateKeyDescription"
+      ],
+      "Resource": "arn:${AWS::Partition}:kms:*:${AWS::AccountId}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi",
+          "aws:ResourceTag/Role": "primary",
+          "aws:ResourceTag/Managed": "terraform"
+        }
+      }
+    },
+    {
+      "Sid": "UseOnlyTaggedTerraformKmsAliasTargets",
+      "Effect": "Allow",
+      "Action": [
+        "kms:CreateAlias",
+        "kms:DeleteAlias",
+        "kms:UpdateAlias"
+      ],
+      "Resource": "arn:${AWS::Partition}:kms:*:${AWS::AccountId}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "eth-failover",
+          "aws:ResourceTag/Network": "hoodi",
+          "aws:ResourceTag/Role": "primary",
+          "aws:ResourceTag/Managed": "terraform"
+        }
+      }
+    },
+    {
+      "Sid": "ManageOnlyExactTerraformKmsAliases",
+      "Effect": "Allow",
+      "Action": [
+        "kms:CreateAlias",
+        "kms:DeleteAlias",
+        "kms:UpdateAlias"
+      ],
+      "Resource": [
+        "arn:${AWS::Partition}:kms:*:${AWS::AccountId}:alias/eth-staking-hoodi-keystore",
+        "arn:${AWS::Partition}:kms:*:${AWS::AccountId}:alias/eth-staking-hoodi-keystore-recovery",
+        "arn:${AWS::Partition}:kms:*:${AWS::AccountId}:alias/eth-validator-keys-hoodi"
+      ]
+    },
+    {
+      "Sid": "ListKmsAliasesForProviderRefresh",
+      "Effect": "Allow",
+      "Action": "kms:ListAliases",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageTerraformSnsResources",
+      "Effect": "Allow",
+      "Action": [
+        "sns:CreateTopic",
+        "sns:DeleteTopic",
+        "sns:GetSubscriptionAttributes",
+        "sns:GetTopicAttributes",
+        "sns:ListSubscriptionsByTopic",
+        "sns:ListTagsForResource",
+        "sns:SetSubscriptionAttributes",
+        "sns:SetTopicAttributes",
+        "sns:Subscribe",
+        "sns:TagResource",
+        "sns:Unsubscribe",
+        "sns:UntagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageTerraformSsmParameters",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:AddTagsToResource",
+        "ssm:DeleteParameter",
+        "ssm:GetParameter",
+        "ssm:ListTagsForResource",
+        "ssm:PutParameter",
+        "ssm:RemoveTagsFromResource"
+      ],
+      "Resource": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eth-staking/hoodi/*"
+    },
+    {
+      "Sid": "ManageTerraformCloudWatchAlarm",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:ListTagsForResource",
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:TagResource",
+        "cloudwatch:UntagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageTerraformStagingBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:DeleteBucketPolicy",
+        "s3:DeleteBucketEncryption",
+        "s3:DeletePublicAccessBlock",
+        "s3:GetAccelerateConfiguration",
+        "s3:GetBucketAcl",
+        "s3:GetBucketCORS",
+        "s3:GetBucketLocation",
+        "s3:GetBucketLogging",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketRequestPayment",
+        "s3:GetBucketTagging",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketWebsite",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetReplicationConfiguration",
+        "s3:ListBucket",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketTagging",
+        "s3:PutBucketVersioning",
+        "s3:PutEncryptionConfiguration",
+        "s3:TagResource",
+        "s3:UntagResource"
+      ],
+      "Resource": "arn:${AWS::Partition}:s3:::eth-failover-hoodi-staging-${AWS::AccountId}"
+    },
+    {
+      "Sid": "ListApprovedStagingObjectVersions",
+      "Effect": "Allow",
+      "Action": "s3:ListBucketVersions",
+      "Resource": "arn:${AWS::Partition}:s3:::eth-failover-hoodi-staging-${AWS::AccountId}"
+    },
+    {
+      "Sid": "DeleteApprovedStagingObjectVersions",
+      "Effect": "Allow",
+      "Action": [
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": "arn:${AWS::Partition}:s3:::eth-failover-hoodi-staging-${AWS::AccountId}/*"
+    },
+    {
+      "Sid": "ReadCallerIdentity",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyBootstrapNodeSshKeyPairMutation",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateKeyPair",
+        "ec2:CreateTags",
+        "ec2:DeleteKeyPair",
+        "ec2:DeleteTags",
+        "ec2:ImportKeyPair"
+      ],
+      "Resource": "${NodeSshKeyPairArn}"
+    },
+    {
+      "Sid": "DenyNodeBoundaryRemoval",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary"
+      ],
+      "Resource": "${NodeRoleArn}"
+    },
+    {
+      "Sid": "DenyAnyOidcProviderCreation",
+      "Effect": "Deny",
+      "Action": "iam:CreateOpenIDConnectProvider",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyCiSelfManagement",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AddClientIDToOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider",
+        "iam:RemoveClientIDFromOpenIDConnectProvider",
+        "iam:UpdateOpenIDConnectProviderThumbprint",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription"
+      ],
+      "Resource": [
+        "${TerraformPlanRoleArn}",
+        "${TerraformApplyRoleArn}",
+        "${KmsBreakGlassRoleArn}",
+        "${GithubOidcProviderArn}"
+      ]
+    },
+    {
+      "Sid": "DenyChangesToCiRolesAndBootstrapDataStores",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "kms:DisableKey",
+        "kms:DisableKeyRotation",
+        "kms:EnableKey",
+        "kms:EnableKeyRotation",
+        "kms:PutKeyPolicy",
+        "kms:ScheduleKeyDeletion",
+        "kms:TagResource",
+        "kms:UntagResource",
+        "kms:UpdateKeyDescription",
+        "s3:DeleteBucket",
+        "s3:DeleteBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration"
+      ],
+      "Resource": [
+        "${TerraformPlanRoleArn}",
+        "${TerraformApplyRoleArn}",
+        "${KmsBreakGlassRoleArn}",
+        "${StateBucketArn}",
+        "${PlanArtifactBucketArn}",
+        "${StateKmsKeyArn}",
+        "${PlanArtifactKmsKeyArn}"
+      ]
+    }
+  ]
+}

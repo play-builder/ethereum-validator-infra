@@ -1,0 +1,124 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyState",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion"
+      ],
+      "Resource": [
+        "${StateBucketArn}/hoodi-testnet-dev/terraform.tfstate",
+        "${StateBucketArn}/hoodi-testnet-dev/standby-terraform.tfstate"
+      ]
+    },
+    {
+      "Sid": "ManageOnlyStateLock",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "${StateBucketArn}/hoodi-testnet-dev/terraform.tfstate.tflock",
+        "${StateBucketArn}/hoodi-testnet-dev/standby-terraform.tfstate.tflock"
+      ]
+    },
+    {
+      "Sid": "ListOnlyStateBucket",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "${StateBucketArn}",
+      "Condition": {
+        "StringEquals": {
+          "s3:prefix": [
+            "hoodi-testnet-dev/terraform.tfstate",
+            "hoodi-testnet-dev/standby-terraform.tfstate",
+            "hoodi-testnet-dev/terraform.tfstate.tflock",
+            "hoodi-testnet-dev/standby-terraform.tfstate.tflock"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "UseStateAndPlanKeys",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:Encrypt",
+        "kms:GenerateDataKey"
+      ],
+      "Resource": [
+        "${StateKmsKeyArn}",
+        "${PlanArtifactKmsKeyArn}"
+      ]
+    },
+    {
+      "Sid": "CreateOnlyPlanArtifactObjects",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "${PlanArtifactBucketArn}/${GitHubRepository}/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:if-none-match": "*",
+          "s3:x-amz-server-side-encryption": "aws:kms",
+          "s3:x-amz-server-side-encryption-aws-kms-key-id": "${PlanArtifactKmsKeyArn}"
+        }
+      }
+    },
+    {
+      "Sid": "ReadTerraformProviderGraph",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:ListTagsForResource",
+        "ec2:Describe*",
+        "iam:GetInstanceProfile",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:ListRolePolicies",
+        "kms:DescribeKey",
+        "kms:GetKeyPolicy",
+        "kms:GetKeyRotationStatus",
+        "kms:ListAliases",
+        "kms:ListResourceTags",
+        "sns:GetSubscriptionAttributes",
+        "sns:GetTopicAttributes",
+        "sns:ListSubscriptionsByTopic",
+        "sns:ListTagsForResource",
+        "ssm:GetParameter",
+        "ssm:ListTagsForResource",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadOnlyTerraformStagingBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetAccelerateConfiguration",
+        "s3:GetBucketAcl",
+        "s3:GetBucketCORS",
+        "s3:GetBucketLocation",
+        "s3:GetBucketLogging",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketRequestPayment",
+        "s3:GetBucketTagging",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketWebsite",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetReplicationConfiguration",
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:${AWS::Partition}:s3:::eth-failover-hoodi-staging-${AWS::AccountId}"
+    }
+  ]
+}
