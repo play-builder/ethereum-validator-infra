@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "GitHubRepository",
+    "ParameterValue": "EXAMPLE_ORGANIZATION/EXAMPLE_REPOSITORY"
+  },
+  {
+    "ParameterKey": "GitHubRepositoryOwnerId",
+    "ParameterValue": "12345678"
+  },
+  {
+    "ParameterKey": "GitHubRepositoryId",
+    "ParameterValue": "987654321"
+  },
+  {
+    "ParameterKey": "GitHubEnvironment",
+    "ParameterValue": "hoodi-testnet-dev"
+  },
+  {
+    "ParameterKey": "GitHubTeardownEnvironment",
+    "ParameterValue": "hoodi-testnet-dev-teardown"
+  },
+  {
+    "ParameterKey": "NodeSshKeyPairName",
+    "ParameterValue": "eth-failover-hoodi"
+  },
+  {
+    "ParameterKey": "NodeSshPublicKey",
+    "ParameterValue": "REPLACE_WITH_THE_SINGLE_LINE_CONTENTS_OF_YOUR_DOT_PUB_FILE"
+  },
+  {
+    "ParameterKey": "StateBucketMode",
+    "ParameterValue": "CREATE"
+  },
+  {
+    "ParameterKey": "StateBucketName",
+    "ParameterValue": "replace-with-unique-terraform-state-bucket"
+  },
+  {
+    "ParameterKey": "PlanArtifactBucketName",
+    "ParameterValue": "replace-with-unique-terraform-plan-artifact-bucket"
+  }
+]
