@@ -1,0 +1,3 @@
+# ansible-static CI 도구 핀. 로컬과 GitHub Actions가 최종 검증에 사용한
+# 동일한 micro 버전으로 syntax-check를 수행한다.
+ansible-core==2.21.2

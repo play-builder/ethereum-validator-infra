@@ -1,0 +1,8 @@
+---
+all:
+  children:
+    primary_aws:
+      hosts:
+        aws-primary-01:
+          ansible_host: 203.0.113.30      # terraform output node_public_ip
+          ansible_user: ubuntu
