@@ -1,0 +1,81 @@
+---
+# 복사: cp all.example.yml all.yml (all.yml은 .gitignore). placeholder 값은 수동 확인 후 기입.
+network: hoodi
+genesis_validators_root: "0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f"
+host_id: aws-primary-01                # vc-gate token의 host_id와 일치해야 함
+
+data_mount: /data
+validator_state_mount: /var/lib/validator-state
+ethereum_group: ethereum
+users:
+  execution: nethermind
+  beacon: lighthouse-beacon
+  validator: lighthouse-validator
+
+# 클라이언트 릴리스 핀은 install-clients.yml이 generated lock에서만 별칭으로 주입한다.
+
+checkpoint_sync_url: "https://hoodi.checkpoint.sigp.io"   # [실습 직전 확인] 2차 소스 교차 검증(part-08)
+fee_recipient: "REPLACE_0x_FEE_RECIPIENT"
+graffiti: "p-aws"                      # D8
+
+# vc-gate (D3)
+expected_scope: "vc-start-initial"     # CH10 최초 기동. CH18 failback은 vc-start-primary.
+expected_pubkeys: []                   # 예: ["0xabc..."] — part-10 활성화 승인 단계에서 기입
+vc_datadir: /var/lib/validator-state/lighthouse/validator
+
+# WireGuard (D9) — 개인키는 절대 여기 두지 않는다(호스트에서 수동 생성)
+wg_address_self: "10.88.0.1/32"
+wg_peer_address: "10.88.0.2/32"
+wg_peer_public_ip: null                # 기반 구성에서는 Standby EC2 공인 IPv4를 알기 전 51820 공개 규칙을 만들지 않는다.
+wg_peer_public_key: "REPLACE_STANDBY_WG_PUBKEY"
+wg_listen_port: 51820
+
+# MEV-Boost (R5) — 기본 비활성. 활성화는 part-11 절차로만.
+enable_mev_boost: false
+mev_boost_version: "1.12"                  # [실습 직전 확인]
+mev_boost_sha256: "51e24be111c230526f39f4f278fe1b2319a7d81de36fcc3f4a441cd81b8687eb"
+mev_relays: []                         # [실습 직전 확인] Hoodi 릴레이 목록
+
+# Monitoring
+prometheus_version: "3.13.0"
+prometheus_sha256: "744d93324cc024d82089921737bd797474d7f1e5dbbfd1c6b387bad258538cb9"
+node_exporter_version: "1.11.1"
+node_exporter_sha256: "9f5ea48e5bc7b656f8a91a32e7d7deb89f70f73dabd0d974418aca15f37d6810"
+cloudwatch_namespace: "EthFailover/hoodi"
+enable_vc_monitoring: true
+enable_peer_monitoring: false  # CH17 WireGuard handshake 뒤 true
+admin_ipv4_cidrs:
+  - "203.0.113.10/32"
+
+# Observability 확장 (Grafana/Alertmanager — 핀은 upstream versions.yml 승계)
+aws_region: "ap-northeast-2"
+sns_topic_arn: "REPLACE_AFTER_P02_TERRAFORM_OUTPUT"   # terraform output sns_topic_arn
+grafana_version: "13.1.0"
+grafana_build_id: "28013217238"
+grafana_sha256: "4f562bb224b8bb758b47789381babb284cb41687da8d714f2ff0e118e945e775"
+alertmanager_version: "0.32.1"
+alertmanager_sha256: "e3ba4a543111dd4bbf436838385cbf88108f0b128a723e61fe97d3569294ad4d"
+
+# ── P1-05: systemd ExecStart 단일 원천 (감사 대응) ─────────────────────────────
+# 빈 `ExecStart=` 는 기존 명령 리스트를 리셋하므로, drop-in이 전체 명령을 복사하면
+# 클라이언트 업그레이드 때 조용히 드리프트한다. 그래서 명령을 여기 한 곳에서만
+# 정의하고 유닛·drop-in이 모두 이 변수를 렌더한다.
+lighthouse_bn_execstart_base: >-
+  /opt/ethereum/lighthouse/current/lighthouse bn
+  --network={{ network }}
+  --datadir={{ data_mount }}/ethereum/lighthouse/beacon
+  --execution-endpoint=http://127.0.0.1:8551
+  --execution-jwt=/etc/ethereum/jwt.hex
+  --checkpoint-sync-url={{ checkpoint_sync_url }}
+  --http --http-address=127.0.0.1 --http-port=5052
+  --metrics --metrics-address=0.0.0.0 --metrics-port=5054
+  --validator-monitor-auto
+  --port=9000 --quic-port=9001
+
+# VC가 사용할 beacon node 목록 (D10 폴백은 여기에 추가 — drop-in 복사 금지)
+vc_beacon_nodes: "http://127.0.0.1:5052"
+# 예) 폴백 포함:  "http://127.0.0.1:5052,http://10.88.0.2:5052"
+
+# ── P1-04: self-fence lease ────────────────────────────────────────────────────
+lease_check_interval: "*:0/1"      # 매분 (systemd OnCalendar)
+lease_grace_s: 0                   # 만료 후 유예(기본 0)
