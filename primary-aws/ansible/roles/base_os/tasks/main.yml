@@ -1,0 +1,83 @@
+---
+- name: 필수 패키지 설치
+  tags: [base_os_prepare]
+  ansible.builtin.apt:
+    name: [chrony, nftables, jq, curl, ca-certificates, unzip, tar, gpg, smartmontools, awscli, wireguard-tools]
+    state: present
+    update_cache: true
+
+- name: chrony 활성화 — 시계는 서명 안전의 일부 (INC-05 Medalla Roughtime)
+  tags: [base_os_prepare]
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+
+- name: 마운트 전제 확인 — user-data가 만든 라벨 마운트가 실재해야 함
+  tags: [base_os_prepare]
+  ansible.builtin.command: "findmnt -n {{ item }}"
+  loop: ["{{ data_mount }}", "{{ validator_state_mount }}"]
+  changed_when: false
+
+- name: ethereum 그룹
+  tags: [base_os_prepare]
+  ansible.builtin.group:
+    name: "{{ ethereum_group }}"
+    system: true
+
+- name: 클라이언트 계정 (로그인 불가 시스템 계정)
+  tags: [base_os_prepare]
+  ansible.builtin.user:
+    name: "{{ item }}"
+    group: "{{ ethereum_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  loop:
+    - "{{ users.execution }}"
+    - "{{ users.beacon }}"
+    - "{{ users.validator }}"
+
+- name: 데이터 디렉터리 (chaindata는 /data, VC 상태는 전용 볼륨 — R4)
+  tags: [base_os_prepare]
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ ethereum_group }}"
+    mode: "0750"
+  loop:
+    - { path: "{{ data_mount }}/ethereum/nethermind",            owner: "{{ users.execution }}" }
+    - { path: "{{ data_mount }}/ethereum/lighthouse/beacon",     owner: "{{ users.beacon }}" }
+    - { path: "{{ vc_datadir }}",                                owner: "{{ users.validator }}" }
+    - { path: "/etc/ethereum",                                   owner: root }
+    - { path: "/etc/ethereum/failover",                          owner: root }
+    - { path: "/var/lib/ethereum/staged-keystores",              owner: root }
+
+- name: Gate evidence root — dirfd store 전용 private boundary
+  tags: [base_os_prepare]
+  ansible.builtin.file:
+    path: /var/lib/ethereum-maintenance/evidence
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: JWT 수동 주입 게이트 — 파일 존재 확인
+  ansible.builtin.stat:
+    path: /etc/ethereum/jwt.hex
+  register: jwt_stat
+
+- name: JWT 준비 상태 강제
+  ansible.builtin.fail:
+    msg: >-
+      /etc/ethereum/jwt.hex 이 없습니다. 운영자가 직접 생성·배치합니다:
+      openssl rand -hex 32 | sudo tee /etc/ethereum/jwt.hex &&
+      sudo chown root:{{ ethereum_group }} /etc/ethereum/jwt.hex && sudo chmod 0640 /etc/ethereum/jwt.hex
+  when: not jwt_stat.stat.exists
+
+- name: 배포본 보관 디렉터리
+  ansible.builtin.file:
+    path: /opt/ethereum/dist
+    state: directory
+    mode: "0755"

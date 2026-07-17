@@ -1,0 +1,6 @@
+---
+- name: Base OS foundation (비서명 영역만)
+  hosts: primary_aws
+  become: true
+  roles:
+    - base_os
