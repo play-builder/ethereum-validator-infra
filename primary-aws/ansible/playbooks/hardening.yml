@@ -1,0 +1,6 @@
+---
+- name: Host hardening (nftables, sshd, 계정 규율)
+  hosts: primary_aws
+  become: true
+  roles:
+    - hardening

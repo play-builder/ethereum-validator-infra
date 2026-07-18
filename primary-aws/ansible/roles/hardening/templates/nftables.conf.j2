@@ -1,0 +1,36 @@
+#!/usr/sbin/nft -f
+# eth-failover primary — SG(클라우드)와 별개로 호스트에서 한 번 더 조인다.
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+
+    iif "lo" accept
+    ct state established,related accept
+    ct state invalid drop
+    ip protocol icmp accept
+    meta l4proto ipv6-icmp accept
+
+    # P2P
+    tcp dport 30303 accept
+    udp dport 30303 accept
+    tcp dport 9000 accept
+    udp dport { 9000, 9001 } accept
+
+    # SSH — 관리 CIDR만
+{% for cidr in admin_ipv4_cidrs %}
+    ip saddr {{ cidr }} tcp dport 22 accept
+{% endfor %}
+
+{% if wg_peer_public_ip is not none %}
+    # WireGuard — 교차 트랙 활성화 후 peer 공인 IP만 (D9)
+    ip saddr {{ wg_peer_public_ip }} udp dport {{ wg_listen_port }} accept
+{% endif %}
+
+    # 터널 내부(peer wg 주소)에서만: Prometheus/metrics/BN(폴백 D10)
+    ip saddr {{ wg_peer_address | regex_replace('/32','') }} tcp dport { 5052, 5054, 5064, 9090, 9100 } accept
+  }
+  chain forward { type filter hook forward priority 0; policy drop; }
+  chain output  { type filter hook output  priority 0; policy accept; }
+}

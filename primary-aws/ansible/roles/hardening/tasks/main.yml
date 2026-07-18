@@ -1,0 +1,25 @@
+---
+- name: sshd 강화 drop-in
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/90-eth-failover.conf
+    mode: "0644"
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      X11Forwarding no
+      MaxAuthTries 3
+  notify: reload sshd
+
+- name: nftables 규칙 (SG와 이중 방어 — 내부 포트는 wg/localhost만)
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    mode: "0644"
+  notify: reload nftables
+
+- name: nftables 활성화
+  ansible.builtin.service:
+    name: nftables
+    state: started
+    enabled: true
