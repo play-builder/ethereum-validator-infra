@@ -1,0 +1,22 @@
+---
+- name: Install and start pinned execution client
+  hosts: primary_aws
+  become: true
+  vars_files:
+    - ../group_vars/client-release-lock.generated.json
+  vars:
+    nethermind_version: "{{ client_release_lock.nethermind.version }}"
+    nethermind_sha256: "{{ client_release_lock.nethermind.sha256 }}"
+    nethermind_archive_url: "{{ client_release_lock.nethermind.archive_url }}"
+    nethermind_signature_url: "{{ client_release_lock.nethermind.signature_url }}"
+    nethermind_signature_sha256: "{{ client_release_lock.nethermind.signature_sha256 }}"
+    nethermind_signer_fingerprint: "{{ client_release_lock.nethermind.signer_fingerprint }}"
+  roles:
+    - nethermind
+  tasks:
+    - name: Start Nethermind after the reviewed install
+      ansible.builtin.systemd:
+        name: nethermind.service
+        enabled: true
+        state: started
+        daemon_reload: true

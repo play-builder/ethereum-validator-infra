@@ -1,0 +1,114 @@
+---
+- name: Nethermind 릴리스 검증 값 확인
+  ansible.builtin.fail:
+    msg: >-
+      client-release-lock의 Nethermind version/archive/signature/fingerprint 값이 모두 필요합니다.
+  when: >-
+    nethermind_version | length == 0 or
+    nethermind_sha256 | length == 0 or
+    nethermind_archive_url | length == 0 or
+    nethermind_signature_url | length == 0 or
+    nethermind_signature_sha256 | length == 0 or
+    nethermind_signer_fingerprint | length == 0
+
+- name: 릴리스 검증 디렉터리
+  ansible.builtin.file:
+    path: /opt/ethereum/trust
+    state: directory
+    mode: "0755"
+
+- name: 검증된 Nethermind 릴리스 공개키 배치
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../shared/keys/nethermind-release-key.asc"
+    dest: /opt/ethereum/trust/nethermind-release-key.asc
+    mode: "0644"
+  register: nethermind_release_key
+
+- name: Nethermind 공개키 fingerprint 읽기
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --show-keys
+      - --with-colons
+      - /opt/ethereum/trust/nethermind-release-key.asc
+  register: nethermind_release_key_metadata
+  changed_when: false
+
+- name: Nethermind 공개키 fingerprint 고정값 확인
+  ansible.builtin.assert:
+    that:
+      - "('fpr:::::::::' ~ nethermind_signer_fingerprint ~ ':') in nethermind_release_key_metadata.stdout"
+    fail_msg: "Nethermind 공개키 fingerprint가 client-release-lock과 다릅니다."
+
+- name: Nethermind gpgv keyring 상태 확인
+  ansible.builtin.stat:
+    path: /opt/ethereum/trust/nethermind-release-key.gpg
+  register: nethermind_release_keyring
+
+- name: Nethermind 공개키를 gpgv keyring으로 변환
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --yes
+      - --dearmor
+      - --output
+      - /opt/ethereum/trust/nethermind-release-key.gpg
+      - /opt/ethereum/trust/nethermind-release-key.asc
+  when: nethermind_release_key.changed or not nethermind_release_keyring.stat.exists
+
+- name: 배포본 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "{{ nethermind_archive_url }}"
+    dest: "/opt/ethereum/dist/nethermind-{{ nethermind_version }}.zip"
+    checksum: "sha256:{{ nethermind_sha256 }}"
+    mode: "0644"
+
+- name: Nethermind 분리 서명 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "{{ nethermind_signature_url }}"
+    dest: "/opt/ethereum/dist/nethermind-{{ nethermind_version }}.zip.asc"
+    checksum: "sha256:{{ nethermind_signature_sha256 }}"
+    mode: "0644"
+
+- name: Nethermind 배포본 OpenPGP 서명 확인
+  ansible.builtin.command:
+    argv:
+      - gpgv
+      - --keyring
+      - /opt/ethereum/trust/nethermind-release-key.gpg
+      - "/opt/ethereum/dist/nethermind-{{ nethermind_version }}.zip.asc"
+      - "/opt/ethereum/dist/nethermind-{{ nethermind_version }}.zip"
+  changed_when: false
+
+- name: 설치 디렉터리
+  ansible.builtin.file:
+    path: "/opt/ethereum/nethermind/{{ nethermind_version }}"
+    state: directory
+    mode: "0755"
+
+- name: 압축 해제
+  ansible.builtin.unarchive:
+    src: "/opt/ethereum/dist/nethermind-{{ nethermind_version }}.zip"
+    dest: "/opt/ethereum/nethermind/{{ nethermind_version }}"
+    remote_src: true
+    creates: "/opt/ethereum/nethermind/{{ nethermind_version }}/nethermind"
+
+- name: current 심볼릭 링크 (업그레이드는 링크 교체 + change record)
+  ansible.builtin.file:
+    src: "/opt/ethereum/nethermind/{{ nethermind_version }}"
+    dest: /opt/ethereum/nethermind/current
+    state: link
+
+- name: systemd 유닛
+  ansible.builtin.template:
+    src: nethermind.service.j2
+    dest: /etc/systemd/system/nethermind.service
+    mode: "0644"
+  notify: daemon-reload
+
+- name: enable (기동은 part-07 절차에서 사람이)
+  ansible.builtin.systemd:
+    name: nethermind.service
+    enabled: true

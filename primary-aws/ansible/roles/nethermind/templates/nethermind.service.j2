@@ -1,0 +1,43 @@
+[Unit]
+Description=Nethermind {{ network }} execution client
+Documentation=https://docs.nethermind.io/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ users.execution }}
+Group={{ ethereum_group }}
+UMask=0077
+WorkingDirectory=/opt/ethereum/nethermind/current
+ExecStart=/opt/ethereum/nethermind/current/nethermind \
+  --config {{ network }} \
+  --datadir {{ data_mount }}/ethereum/nethermind \
+  --JsonRpc.Enabled true \
+  --JsonRpc.Host 127.0.0.1 \
+  --JsonRpc.Port 8545 \
+  --JsonRpc.EngineHost 127.0.0.1 \
+  --JsonRpc.EnginePort 8551 \
+  --JsonRpc.JwtSecretFile /etc/ethereum/jwt.hex \
+  --Network.P2PPort 30303 \
+  --Network.DiscoveryPort 30303 \
+  --Metrics.Enabled true \
+  --Metrics.ExposeHost 127.0.0.1 \
+  --Metrics.ExposePort 6060
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10min
+KillSignal=SIGINT
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ data_mount }}/ethereum/nethermind
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
