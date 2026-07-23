@@ -1,0 +1,30 @@
+[Unit]
+Description=Lighthouse {{ network }} beacon node (primary)
+Documentation=https://lighthouse-book.sigmaprime.io/
+Wants=network-online.target
+After=network-online.target nethermind.service
+
+[Service]
+Type=simple
+User={{ users.beacon }}
+Group={{ ethereum_group }}
+UMask=0077
+# P1-05: 명령은 group_vars(lighthouse_bn_execstart_base)에서만 정의된다.
+ExecStart={{ lighthouse_bn_execstart_base }}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5min
+KillSignal=SIGINT
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ data_mount }}/ethereum/lighthouse/beacon
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,114 @@
+---
+- name: Lighthouse 릴리스 검증 값 확인
+  ansible.builtin.fail:
+    msg: >-
+      client-release-lock의 Lighthouse version/archive/signature/fingerprint 값이 모두 필요합니다.
+  when: >-
+    lighthouse_version | length == 0 or
+    lighthouse_sha256 | length == 0 or
+    lighthouse_archive_url | length == 0 or
+    lighthouse_signature_url | length == 0 or
+    lighthouse_signature_sha256 | length == 0 or
+    lighthouse_signer_fingerprint | length == 0
+
+- name: 릴리스 검증 디렉터리
+  ansible.builtin.file:
+    path: /opt/ethereum/trust
+    state: directory
+    mode: "0755"
+
+- name: 검증된 Lighthouse 릴리스 공개키 배치
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../shared/keys/lighthouse-release-key.asc"
+    dest: /opt/ethereum/trust/lighthouse-release-key.asc
+    mode: "0644"
+  register: lighthouse_release_key
+
+- name: Lighthouse 공개키 fingerprint 읽기
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --show-keys
+      - --with-colons
+      - /opt/ethereum/trust/lighthouse-release-key.asc
+  register: lighthouse_release_key_metadata
+  changed_when: false
+
+- name: Lighthouse 공개키 fingerprint 고정값 확인
+  ansible.builtin.assert:
+    that:
+      - "('fpr:::::::::' ~ lighthouse_signer_fingerprint ~ ':') in lighthouse_release_key_metadata.stdout"
+    fail_msg: "Lighthouse 공개키 fingerprint가 client-release-lock과 다릅니다."
+
+- name: Lighthouse gpgv keyring 상태 확인
+  ansible.builtin.stat:
+    path: /opt/ethereum/trust/lighthouse-release-key.gpg
+  register: lighthouse_release_keyring
+
+- name: Lighthouse 공개키를 gpgv keyring으로 변환
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --yes
+      - --dearmor
+      - --output
+      - /opt/ethereum/trust/lighthouse-release-key.gpg
+      - /opt/ethereum/trust/lighthouse-release-key.asc
+  when: lighthouse_release_key.changed or not lighthouse_release_keyring.stat.exists
+
+- name: Lighthouse 배포본 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "{{ lighthouse_archive_url }}"
+    dest: "/opt/ethereum/dist/lighthouse-v{{ lighthouse_version }}.tar.gz"
+    checksum: "sha256:{{ lighthouse_sha256 }}"
+    mode: "0644"
+
+- name: Lighthouse 분리 서명 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "{{ lighthouse_signature_url }}"
+    dest: "/opt/ethereum/dist/lighthouse-v{{ lighthouse_version }}.tar.gz.asc"
+    checksum: "sha256:{{ lighthouse_signature_sha256 }}"
+    mode: "0644"
+
+- name: Lighthouse 배포본 OpenPGP 서명 확인
+  ansible.builtin.command:
+    argv:
+      - gpgv
+      - --keyring
+      - /opt/ethereum/trust/lighthouse-release-key.gpg
+      - "/opt/ethereum/dist/lighthouse-v{{ lighthouse_version }}.tar.gz.asc"
+      - "/opt/ethereum/dist/lighthouse-v{{ lighthouse_version }}.tar.gz"
+  changed_when: false
+
+- name: 설치 디렉터리
+  ansible.builtin.file:
+    path: "/opt/ethereum/lighthouse/{{ lighthouse_version }}"
+    state: directory
+    mode: "0755"
+
+- name: 압축 해제
+  ansible.builtin.unarchive:
+    src: "/opt/ethereum/dist/lighthouse-v{{ lighthouse_version }}.tar.gz"
+    dest: "/opt/ethereum/lighthouse/{{ lighthouse_version }}"
+    remote_src: true
+    creates: "/opt/ethereum/lighthouse/{{ lighthouse_version }}/lighthouse"
+
+- name: current 링크
+  ansible.builtin.file:
+    src: "/opt/ethereum/lighthouse/{{ lighthouse_version }}"
+    dest: /opt/ethereum/lighthouse/current
+    state: link
+
+- name: BN 유닛
+  ansible.builtin.template:
+    src: lighthouse-beacon.service.j2
+    dest: /etc/systemd/system/lighthouse-beacon.service
+    mode: "0644"
+  notify: daemon-reload
+
+- name: Lighthouse Beacon Node 자동 시작 등록 (실제 시작은 승인된 플레이북에서 수행)
+  ansible.builtin.systemd:
+    name: lighthouse-beacon.service
+    enabled: true

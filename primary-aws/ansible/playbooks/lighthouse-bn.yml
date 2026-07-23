@@ -1,0 +1,22 @@
+---
+- name: Install and start pinned consensus client
+  hosts: primary_aws
+  become: true
+  vars_files:
+    - ../group_vars/client-release-lock.generated.json
+  vars:
+    lighthouse_version: "{{ client_release_lock.lighthouse.version }}"
+    lighthouse_sha256: "{{ client_release_lock.lighthouse.sha256 }}"
+    lighthouse_archive_url: "{{ client_release_lock.lighthouse.archive_url }}"
+    lighthouse_signature_url: "{{ client_release_lock.lighthouse.signature_url }}"
+    lighthouse_signature_sha256: "{{ client_release_lock.lighthouse.signature_sha256 }}"
+    lighthouse_signer_fingerprint: "{{ client_release_lock.lighthouse.signer_fingerprint }}"
+  roles:
+    - lighthouse_bn
+  tasks:
+    - name: Start Lighthouse Beacon Node after the reviewed install
+      ansible.builtin.systemd:
+        name: lighthouse-beacon.service
+        enabled: true
+        state: started
+        daemon_reload: true
