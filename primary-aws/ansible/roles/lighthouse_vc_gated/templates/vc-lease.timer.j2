@@ -1,0 +1,11 @@
+[Unit]
+Description=Run validator lease self-fence check periodically
+
+[Timer]
+OnCalendar={{ lease_check_interval | default('*:0/1') }}
+AccuracySec=10s
+Persistent=true
+Unit=vc-lease.service
+
+[Install]
+WantedBy=timers.target

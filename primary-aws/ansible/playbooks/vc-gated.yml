@@ -1,0 +1,6 @@
+---
+- name: Install sealed validator client (게이트 통과 전 기동 불가)
+  hosts: primary_aws
+  become: true
+  roles:
+    - lighthouse_vc_gated

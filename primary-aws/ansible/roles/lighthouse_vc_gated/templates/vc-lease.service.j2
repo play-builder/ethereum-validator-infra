@@ -1,0 +1,11 @@
+[Unit]
+Description=Validator lease self-fence (P1-04) - stops VC when the approval token expires
+Documentation=file:///usr/local/sbin/vc-lease
+
+[Service]
+Type=oneshot
+Environment=VC_GATE_ENV=/etc/ethereum/failover/gate.env
+Environment=LEASE_GRACE_S={{ lease_grace_s | default(0) }}
+ExecStart=/usr/local/sbin/vc-lease
+# 종료 코드 10 = 만료 감지·봉인 완료. 20(미완료)은 의도적으로 실패로 남긴다.
+SuccessExitStatus=0 10
