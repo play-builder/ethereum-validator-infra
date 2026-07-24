@@ -1,0 +1,44 @@
+[Unit]
+Description=Lighthouse {{ network }} validator client - gated, manual activation only
+Documentation=https://lighthouse-book.sigmaprime.io/
+Wants=network-online.target lighthouse-beacon.service
+After=network-online.target lighthouse-beacon.service
+
+[Service]
+Type=simple
+User={{ users.validator }}
+Group={{ ethereum_group }}
+UMask=0077
+# '+' 접두사: 게이트는 전권(root)으로 평가·기록하고, 본 프로세스는 무권한 계정으로 실행된다.
+# 게이트가 exit!=0 이면 systemd는 ExecStart로 진행하지 않는다 — D3의 기계적 강제 지점.
+ExecStartPre=+/usr/local/sbin/vc-gate
+ExecStart=/opt/ethereum/lighthouse/current/lighthouse vc \
+  --network={{ network }} \
+  --datadir={{ vc_datadir }} \
+  --beacon-nodes={{ vc_beacon_nodes }} \
+  --suggested-fee-recipient={{ fee_recipient }} \
+  --graffiti={{ graffiti }} \
+  --metrics \
+  --metrics-address=0.0.0.0 \
+  --metrics-port=5064 \
+{% if enable_mev_boost | bool %}
+  --builder-proposals \
+{% endif %}
+  --enable-doppelganger-protection
+Restart=no
+TimeoutStopSec=5min
+KillSignal=SIGINT
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ vc_datadir }}
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

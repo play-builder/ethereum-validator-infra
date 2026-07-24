@@ -1,0 +1,208 @@
+---
+# 이 롤은 VC를 "설치·seal"만 한다. 기동 경로의 모든 것은 vc-gate가 지키고,
+# unmask/start/키 임포트는 오직 사람이 런북(part-10, RB-01/02)으로 수행한다.
+
+- name: vc-gate secure input snapshot Python runtime
+  ansible.builtin.apt:
+    name: python3
+    state: present
+
+- name: absence evidence trusted root (dirfd boundary)
+  ansible.builtin.file:
+    path: /var/lib/ethereum-maintenance/evidence
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: 공용 게이트·관측·봉인 스크립트 배포 (shared/scripts 단일 원천)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../shared/scripts/{{ item.src }}"
+    dest: "/usr/local/sbin/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - { src: vc-gate.sh,                        dest: vc-gate }
+    - { src: vc-initial-gate.sh,                dest: vc-initial-gate }
+    - { src: vc-input-snapshot.py,              dest: vc-input-snapshot }
+    - { src: vc-evidence-store.py,              dest: vc-evidence-store }
+    - { src: observe-absence.sh,                dest: observe-absence }
+    - { src: operator-identity.py,              dest: operator-identity }
+    - { src: seal-keystores.sh,                 dest: seal-keystores }
+    - { src: validate-slashing-interchange.py,  dest: validate-ethereum-slashing-interchange }
+
+- name: gate.env (D3 — 호스트 정체성·scope·검증 경로)
+  ansible.builtin.template:
+    src: gate.env.j2
+    dest: /etc/ethereum/failover/gate.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: v2.3 sealed-bootstrap validator cardinality (zero or one)
+  ansible.builtin.assert:
+    that:
+      - expected_pubkeys is sequence
+      - expected_pubkeys is not string
+      - expected_pubkeys | length <= 1
+    fail_msg: "sealed bootstrap accepts zero or one validator pubkey; activation requires exactly one"
+    success_msg: "sealed-bootstrap cardinality accepted; vc-gate and observe-absence remain exactly-one activation gates"
+
+- name: expected-pubkeys (비어 있으면 게이트가 기동을 거부한다 — 활성화 게이트에서 기입)
+  ansible.builtin.template:
+    src: expected-pubkeys.txt.j2
+    dest: /etc/ethereum/failover/expected-pubkeys.txt
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: fee recipient machine gate (20-byte non-zero address)
+  ansible.builtin.assert:
+    that:
+      - fee_recipient is string
+      - fee_recipient is match('^0x[0-9A-Fa-f]{40}$')
+      - fee_recipient | lower != '0x0000000000000000000000000000000000000000'
+    fail_msg: "fee_recipient must be a controlled, non-zero 20-byte execution address"
+    success_msg: "fee_recipient format and non-zero gate passed"
+
+- name: systemd local vendor unit directory
+  ansible.builtin.file:
+    path: /usr/local/lib/systemd/system
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: VC vendor 유닛 (ExecStartPre=vc-gate, DP 상시, graffiti 각인)
+  ansible.builtin.template:
+    src: lighthouse-validator.service.j2
+    dest: /usr/local/lib/systemd/system/lighthouse-validator.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: daemon-reload
+
+- name: Stop VC before sealing
+  ansible.builtin.systemd:
+    name: lighthouse-validator.service
+    state: stopped
+    enabled: false
+    daemon_reload: true
+
+- name: Probe VC process absence after stop
+  ansible.builtin.command:
+    argv:
+      - pgrep
+      - -u
+      - lighthouse-validator
+      - -f
+      - "^/opt/ethereum/lighthouse/current/lighthouse vc( |$)"
+  register: vc_process_probe
+  changed_when: false
+  failed_when: vc_process_probe.rc not in [0, 1]
+
+- name: Require VC process absence before sealing
+  ansible.builtin.assert:
+    that:
+      - vc_process_probe.rc == 1
+    fail_msg: "VC process remains after systemd stop; refusing legacy-unit migration and mask"
+    success_msg: "VC process absence proved before legacy-unit migration"
+
+- name: Inspect legacy VC mask path without following links
+  ansible.builtin.stat:
+    path: /etc/systemd/system/lighthouse-validator.service
+    follow: false
+    get_checksum: true
+    checksum_algorithm: sha256
+  register: legacy_vc_unit
+
+- name: Reject an unexpected object at the VC mask path
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (legacy_vc_unit.stat.exists | default(false))
+        or (legacy_vc_unit.stat.islnk | default(false) and legacy_vc_unit.stat.lnk_source == '/dev/null')
+        or (legacy_vc_unit.stat.isreg | default(false))
+    fail_msg: "unexpected object at /etc/systemd/system/lighthouse-validator.service; refusing to overwrite it"
+
+- name: Render the exact v2.2 managed VC unit for migration comparison
+  ansible.builtin.template:
+    src: lighthouse-validator.service.v2.2.j2
+    dest: /run/lighthouse-validator.service.legacy-expected
+    owner: root
+    group: root
+    mode: "0600"
+  when: legacy_vc_unit.stat.isreg | default(false)
+
+- name: Hash the expected v2.2 managed VC unit
+  ansible.builtin.stat:
+    path: /run/lighthouse-validator.service.legacy-expected
+    get_checksum: true
+    checksum_algorithm: sha256
+  register: expected_legacy_vc_unit
+  when: legacy_vc_unit.stat.isreg | default(false)
+
+- name: Require an exact managed legacy VC unit before migration
+  ansible.builtin.assert:
+    that:
+      - legacy_vc_unit.stat.checksum == expected_legacy_vc_unit.stat.checksum
+    fail_msg: "legacy /etc VC unit differs from the v2.2 managed fixture; manual review required"
+  when: legacy_vc_unit.stat.isreg | default(false)
+
+- name: Remove only the exact legacy managed VC unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/lighthouse-validator.service
+    state: absent
+  when: legacy_vc_unit.stat.isreg | default(false)
+
+- name: Remove the temporary legacy comparison unit
+  ansible.builtin.file:
+    path: /run/lighthouse-validator.service.legacy-expected
+    state: absent
+  when: legacy_vc_unit.stat.isreg | default(false)
+
+- name: VC 봉인 — mask가 기본 상태다 (해제는 런북 게이트만)
+  ansible.builtin.systemd:
+    name: lighthouse-validator.service
+    enabled: false
+    masked: true
+    daemon_reload: true
+
+- name: token/SEALED 경로는 Ansible이 절대 만들지 않음을 감사 로그로 남김
+  ansible.builtin.copy:
+    dest: /etc/ethereum/failover/README-manual-boundary.txt
+    mode: "0644"
+    content: |
+      이 디렉터리의 approval.token / SEALED / sp-import-approved 는 사람만 만들고 지운다 (D4).
+      절차: shared/scripts/make-approval-token.md, shared/runbooks/RB-01,02.
+      자동화 도구가 이 파일들을 생성한 흔적은 그 자체로 사고다 (INCIDENTS.md 통제 역추적표).
+
+# ── P1-04: self-fence lease (감사 대응) ───────────────────────────────────────
+# "연락 두절 = 무기한 서명 가능"을 "시각 T 이후 서명 불가"로 바꾸는 장치.
+# 자동 stop만 하며 자동 start는 절대 하지 않는다(D1 유지).
+
+- name: vc-lease 스크립트 배포
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../shared/scripts/vc-lease.sh"
+    dest: /usr/local/sbin/vc-lease
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: vc-lease 유닛·타이머
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - vc-lease.service
+    - vc-lease.timer
+  notify: daemon-reload
+
+- name: vc-lease 타이머 무장 (vc-gate가 무장 여부를 기동 조건으로 검사한다)
+  ansible.builtin.systemd:
+    name: vc-lease.timer
+    state: started
+    enabled: true
+    daemon_reload: true
