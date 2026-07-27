@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+rule_files: [/etc/prometheus-rules.yml]
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ["127.0.0.1:9093"] }]
+scrape_configs:
+  - job_name: node-local
+    static_configs: [{ targets: ["127.0.0.1:9100"], labels: { site: aws } }]
+  - job_name: nethermind
+    static_configs: [{ targets: ["127.0.0.1:6060"], labels: { site: aws } }]
+  - job_name: lighthouse-bn
+    static_configs: [{ targets: ["127.0.0.1:5054"], labels: { site: aws } }]
+{% if enable_vc_monitoring | default(false) %}
+  - job_name: lighthouse-vc
+    static_configs: [{ targets: ["127.0.0.1:5064"], labels: { site: aws } }]
+{% endif %}
+{% if enable_peer_monitoring | default(false) %}
+  # 상호 감시(D9 — 비서명): AWS Standby의 exporter/BN metrics를 터널로 스크레이프
+  - job_name: peer-node
+    static_configs: [{ targets: ["{{ wg_peer_address | regex_replace('/32','') }}:9100"], labels: { site: standby } }]
+  - job_name: peer-lighthouse-bn
+    static_configs: [{ targets: ["{{ wg_peer_address | regex_replace('/32','') }}:5054"], labels: { site: standby } }]
+{% endif %}

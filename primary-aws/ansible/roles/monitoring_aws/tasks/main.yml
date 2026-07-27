@@ -1,0 +1,192 @@
+---
+- name: node_exporter 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    dest: "/opt/ethereum/dist/node_exporter-{{ node_exporter_version }}.tar.gz"
+    checksum: "sha256:{{ node_exporter_sha256 }}"
+    mode: "0644"
+
+- name: node_exporter 설치
+  ansible.builtin.unarchive:
+    src: "/opt/ethereum/dist/node_exporter-{{ node_exporter_version }}.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    extra_opts: ["--strip-components=1", "--wildcards", "*/node_exporter"]
+    creates: /usr/local/bin/node_exporter
+
+- name: prometheus 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: "/opt/ethereum/dist/prometheus-{{ prometheus_version }}.tar.gz"
+    checksum: "sha256:{{ prometheus_sha256 }}"
+    mode: "0644"
+
+- name: prometheus 설치
+  ansible.builtin.unarchive:
+    src: "/opt/ethereum/dist/prometheus-{{ prometheus_version }}.tar.gz"
+    dest: /opt/ethereum
+    remote_src: true
+    creates: "/opt/ethereum/prometheus-{{ prometheus_version }}.linux-amd64/prometheus"
+
+- name: prometheus 사용자·디렉터리
+  ansible.builtin.user: { name: prometheus, system: true, shell: /usr/sbin/nologin, create_home: false }
+- name: prometheus 데이터 디렉터리
+  ansible.builtin.file: { path: /var/lib/prometheus, state: directory, owner: prometheus, mode: "0750" }
+
+- name: prometheus 설정 — 자기 + 상호 스크레이프 (AWS Standby를 wg로 감시, 계획서 §2 관측 연합)
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus.yml
+    mode: "0644"
+  notify: restart prometheus
+
+- name: 알림 규칙 (sync-distance, 디스크, 시계, 듀티 — INCIDENTS 대응 항목 명시)
+  ansible.builtin.template:
+    src: alert-rules.yml.j2
+    dest: /etc/prometheus-rules.yml
+    mode: "0644"
+  notify: restart prometheus
+
+- name: 유닛 2종
+  ansible.builtin.template:
+    src: "{{ item }}.service.j2"
+    dest: "/etc/systemd/system/{{ item }}.service"
+    mode: "0644"
+  loop: [prometheus, node-exporter]
+  notify: daemon-reload
+
+- name: heartbeat 스크립트 (CloudWatch dead-man용 — 값이 '오는 것'이 아니라 '끊기는 것'이 신호)
+  ansible.builtin.template:
+    src: cw-heartbeat.sh.j2
+    dest: /usr/local/sbin/cw-heartbeat
+    mode: "0755"
+
+- name: heartbeat timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/cw-heartbeat.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=CloudWatch heartbeat every minute
+      [Timer]
+      OnCalendar=*-*-* *:*:00
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
+- name: heartbeat service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/cw-heartbeat.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Push node heartbeat metric to CloudWatch
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/cw-heartbeat
+  notify: daemon-reload
+
+- name: 서비스 기동 (모니터링은 비서명 영역 — 자동화 허용)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  loop: [node-exporter.service, prometheus.service, cw-heartbeat.timer]
+
+# ── Observability 확장: Alertmanager(경보 라우팅→SNS) + Grafana(대시보드) ──
+
+- name: sns_topic_arn 미기입 시 실패 (P02 output을 group_vars에 반영해야 함)
+  ansible.builtin.fail:
+    msg: "sns_topic_arn이 placeholder입니다. terraform output sns_topic_arn 값을 group_vars/all.yml에 기입하십시오."
+  when: sns_topic_arn is not defined or sns_topic_arn.startswith('REPLACE')
+
+- name: alertmanager 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+    dest: "/opt/ethereum/dist/alertmanager-{{ alertmanager_version }}.tar.gz"
+    checksum: "sha256:{{ alertmanager_sha256 }}"
+    mode: "0644"
+
+- name: alertmanager 설치
+  ansible.builtin.unarchive:
+    src: "/opt/ethereum/dist/alertmanager-{{ alertmanager_version }}.tar.gz"
+    dest: /opt/ethereum
+    remote_src: true
+    creates: "/opt/ethereum/alertmanager-{{ alertmanager_version }}.linux-amd64/alertmanager"
+
+- name: alertmanager 데이터 디렉터리
+  ansible.builtin.file: { path: /var/lib/alertmanager, state: directory, owner: prometheus, mode: "0750" }
+
+- name: alertmanager 설정 (수신자 = SNS 토픽 — IAM은 terraform iam.tf의 sns:Publish)
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /etc/alertmanager.yml
+    owner: prometheus
+    mode: "0640"
+  notify: restart alertmanager
+
+- name: alertmanager 유닛
+  ansible.builtin.template:
+    src: alertmanager.service.j2
+    dest: /etc/systemd/system/alertmanager.service
+    mode: "0644"
+  notify: daemon-reload
+
+- name: grafana 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "https://dl.grafana.com/grafana/release/{{ grafana_version }}/grafana_{{ grafana_version }}_{{ grafana_build_id }}_linux_amd64.tar.gz"
+    dest: "/opt/ethereum/dist/grafana-{{ grafana_version }}.tar.gz"
+    checksum: "sha256:{{ grafana_sha256 }}"
+    mode: "0644"
+
+- name: grafana 사용자
+  ansible.builtin.user: { name: grafana, system: true, shell: /usr/sbin/nologin, create_home: false }
+
+- name: grafana 설치
+  ansible.builtin.unarchive:
+    src: "/opt/ethereum/dist/grafana-{{ grafana_version }}.tar.gz"
+    dest: /opt/ethereum
+    remote_src: true
+    creates: "/opt/ethereum/grafana-v{{ grafana_version }}/bin/grafana"
+
+- name: grafana 데이터·프로비저닝 디렉터리
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: grafana
+    mode: "0750"
+  loop:
+    - /var/lib/grafana
+    - /etc/grafana/provisioning/datasources
+    - /etc/grafana/provisioning/dashboards
+
+- name: grafana 설정 (127.0.0.1 바인드 — 접근은 SSH 터널로만, 공개 노출 금지)
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    owner: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: grafana 데이터소스 프로비저닝 (로컬 Prometheus)
+  ansible.builtin.template:
+    src: grafana-datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: grafana 유닛
+  ansible.builtin.template:
+    src: grafana.service.j2
+    dest: /etc/systemd/system/grafana.service
+    mode: "0644"
+  notify: daemon-reload
+
+- name: observability 서비스 기동 (비서명 영역 — 자동화 허용)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  loop: [alertmanager.service, grafana.service]

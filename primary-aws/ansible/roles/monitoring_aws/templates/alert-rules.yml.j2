@@ -1,0 +1,27 @@
+groups:
+  - name: eth-failover-primary
+    rules:
+      - alert: BeaconSyncDistanceHigh
+        expr: (sync_lighthouse_head_slot - ignoring(instance) sync_lighthouse_sync_distance) < 0 or sync_lighthouse_sync_distance > 8
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: "BN sync distance > 8 slots (백업 표적 무력화 위험 — 위험 등록부 '동기화 이탈')" }
+      - alert: DiskWillFillSoon
+        expr: predict_linear(node_filesystem_avail_bytes{mountpoint="{{ data_mount }}"}[6h], 24*3600) < 0
+        for: 30m
+        labels: { severity: page }
+        annotations: { summary: "24h 내 디스크 고갈 예측 — 노드 장애 최다 원인" }
+      - alert: ClockDrift
+        expr: abs(node_timex_offset_seconds) > 0.05
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: "시계 드리프트 >50ms (INC-05 Medalla: 시계는 서명 안전의 일부)" }
+      - alert: PeerNodeDown
+        expr: up{job="peer-node"} == 0
+        for: 10m
+        labels: { severity: warn }
+        annotations: { summary: "백업(AWS Standby) 관측 불가 — 터널 또는 백업 장애. 판단은 체인 관측으로(D9)" }
+      - alert: ValidatorProcessUnexpected
+        expr: count by (site) (up{job="lighthouse-vc"} == 1) > 1
+        labels: { severity: page }
+        annotations: { summary: "VC 프로세스 관측 수 이상 — 불변식(0 또는 1) 점검" }

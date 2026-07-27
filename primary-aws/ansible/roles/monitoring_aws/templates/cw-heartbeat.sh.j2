@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# dead-man 하트비트: 이 지표의 "부재"가 CloudWatch 알람(breaching on missing data)을 울린다.
+# 알람 구성은 part-11 문서 절차(수동 콘솔/CLI) — 알람이 전환을 트리거하는 일은 없다(D1).
+set -eu
+TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+aws cloudwatch put-metric-data \
+  --region "$REGION" \
+  --namespace "{{ cloudwatch_namespace }}" \
+  --metric-name node_heartbeat \
+  --dimensions Host={{ host_id }} \
+  --value 1 || true
