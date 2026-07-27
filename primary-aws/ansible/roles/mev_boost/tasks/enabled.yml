@@ -1,0 +1,68 @@
+---
+- name: 핀 미기입 시 실패
+  ansible.builtin.fail:
+    msg: "enable_mev_boost=true인데 mev_boost_version/sha256/mev_relays가 비어 있습니다. [실습 직전 확인] 후 기입."
+  when: mev_boost_version | length == 0 or mev_boost_sha256 | length == 0 or (mev_relays | length) == 0
+
+- name: mev-boost 다운로드 (sha256 강제)
+  ansible.builtin.get_url:
+    url: "https://github.com/flashbots/mev-boost/releases/download/v{{ mev_boost_version }}/mev-boost_{{ mev_boost_version }}_linux_amd64.tar.gz"
+    dest: "/opt/ethereum/dist/mev-boost-{{ mev_boost_version }}.tar.gz"
+    checksum: "sha256:{{ mev_boost_sha256 }}"
+    mode: "0644"
+
+- name: versioned mev-boost 설치 디렉터리
+  ansible.builtin.file:
+    path: "/opt/ethereum/mev-boost/{{ mev_boost_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: versioned mev-boost 압축 해제
+  ansible.builtin.unarchive:
+    src: "/opt/ethereum/dist/mev-boost-{{ mev_boost_version }}.tar.gz"
+    dest: "/opt/ethereum/mev-boost/{{ mev_boost_version }}"
+    remote_src: true
+    creates: "/opt/ethereum/mev-boost/{{ mev_boost_version }}/mev-boost"
+
+- name: mev-boost stable binary symlink
+  ansible.builtin.file:
+    src: "{{ mev_boost_release_dir }}/mev-boost"
+    dest: /usr/local/bin/mev-boost
+    state: link
+    force: true
+
+- name: installed mev-boost version probe
+  ansible.builtin.command: /usr/local/bin/mev-boost -version
+  register: mev_boost_version_output
+  changed_when: false
+
+- name: installed mev-boost version assertion
+  ansible.builtin.assert:
+    that:
+      - mev_boost_version in mev_boost_version_output.stdout or mev_boost_version in mev_boost_version_output.stderr
+    fail_msg: "installed mev-boost binary does not report pinned version {{ mev_boost_version }}"
+    success_msg: "installed mev-boost binary reports pinned version {{ mev_boost_version }}"
+
+- name: mev-boost 유닛
+  ansible.builtin.template:
+    src: mev-boost.service.j2
+    dest: /etc/systemd/system/mev-boost.service
+    mode: "0644"
+  notify: daemon-reload
+
+- name: drop-in 디렉터리 보장
+  ansible.builtin.file:
+    path: /etc/systemd/system/lighthouse-beacon.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: R5 핵심 — BN에 --builder를 연결하는 drop-in을 "파일로" 배치 (반영은 part-11 수동 절차)
+  ansible.builtin.template:
+    src: bn-builder-dropin.conf.j2
+    dest: /etc/systemd/system/lighthouse-beacon.service.d/50-mev-builder.conf
+    mode: "0644"
+  notify: daemon-reload

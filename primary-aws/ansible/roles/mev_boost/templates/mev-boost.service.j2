@@ -1,0 +1,23 @@
+[Unit]
+Description=MEV-Boost relay multiplexer ({{ network }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ users.beacon }}
+Group={{ ethereum_group }}
+ExecStart=/usr/local/bin/mev-boost \
+  -{{ network }} \
+  -addr 127.0.0.1:18550 \
+{% for r in mev_relays %}
+  -relay {{ r }}{{ " \\" if not loop.last }}
+{% endfor %}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

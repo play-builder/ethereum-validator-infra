@@ -1,0 +1,2 @@
+---
+mev_boost_release_dir: "/opt/ethereum/mev-boost/{{ mev_boost_version }}"

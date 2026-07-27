@@ -1,0 +1,7 @@
+# R5 + P1-05: 이 drop-in은 명령을 "복사"하지 않는다.
+# group_vars의 lighthouse_bn_execstart_base(유닛과 동일 원천)에 --builder만 덧붙인다.
+# 따라서 클라이언트 업그레이드로 기본 명령이 바뀌어도 두 곳이 갈라지지 않는다.
+# 유효화는 여전히 사람의 절차: systemctl daemon-reload → 계획 창에서 restart (part-11 §5).
+[Service]
+ExecStart=
+ExecStart={{ lighthouse_bn_execstart_base }} --builder http://127.0.0.1:18550

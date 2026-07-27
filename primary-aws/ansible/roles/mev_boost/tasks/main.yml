@@ -1,0 +1,8 @@
+---
+- name: Converge enabled mev-boost configuration
+  ansible.builtin.include_tasks: enabled.yml
+  when: enable_mev_boost | bool
+
+- name: Converge disabled mev-boost configuration
+  ansible.builtin.include_tasks: disabled.yml
+  when: not (enable_mev_boost | bool)

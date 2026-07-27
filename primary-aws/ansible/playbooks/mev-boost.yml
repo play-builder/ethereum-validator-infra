@@ -1,0 +1,6 @@
+---
+- name: Install pinned mev-boost (relay 정책은 group_vars)
+  hosts: primary_aws
+  become: true
+  roles:
+    - mev_boost

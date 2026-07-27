@@ -1,0 +1,19 @@
+---
+- name: Inspect existing mev-boost unit before disable convergence
+  ansible.builtin.stat:
+    path: /etc/systemd/system/mev-boost.service
+  register: mev_boost_unit
+
+- name: Stop and disable existing mev-boost service
+  ansible.builtin.systemd:
+    name: mev-boost.service
+    state: stopped
+    enabled: false
+    daemon_reload: true
+  when: mev_boost_unit.stat.exists
+
+- name: Remove disabled MEV builder drop-in without restarting the beacon node
+  ansible.builtin.file:
+    path: /etc/systemd/system/lighthouse-beacon.service.d/50-mev-builder.conf
+    state: absent
+  notify: daemon-reload
