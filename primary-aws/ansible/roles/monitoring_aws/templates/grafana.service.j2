@@ -1,0 +1,16 @@
+[Unit]
+Description=Grafana (eth-failover primary, localhost only)
+After=network-online.target
+[Service]
+User=grafana
+WorkingDirectory=/opt/ethereum/grafana-v{{ grafana_version }}
+ExecStart=/opt/ethereum/grafana-v{{ grafana_version }}/bin/grafana server \
+  --config /etc/grafana/grafana.ini \
+  --homepath /opt/ethereum/grafana-v{{ grafana_version }}
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/grafana
+[Install]
+WantedBy=multi-user.target

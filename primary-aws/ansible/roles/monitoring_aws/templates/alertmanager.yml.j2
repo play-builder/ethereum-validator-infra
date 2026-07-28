@@ -1,0 +1,15 @@
+# 경보 라우팅: Prometheus rules → Alertmanager → SNS(운영자 2인 email)
+# 인스턴스 role에 해당 토픽 sns:Publish만 허용됨(terraform iam.tf). D1: 통지까지가 권한의 전부.
+route:
+  receiver: sns-operators
+  group_by: [alertname, site]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+receivers:
+  - name: sns-operators
+    sns_configs:
+      - topic_arn: "{{ sns_topic_arn }}"
+        sigv4:
+          region: "{{ sns_region }}"
+        subject: '[eth-failover {{ network }}] {{ '{{' }} .CommonLabels.alertname {{ '}}' }}'

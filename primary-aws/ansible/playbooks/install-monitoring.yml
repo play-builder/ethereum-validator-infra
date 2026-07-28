@@ -1,0 +1,6 @@
+---
+- name: Monitoring (Prometheus + node_exporter + CloudWatch heartbeat)
+  hosts: primary_aws
+  become: true
+  roles:
+    - monitoring_aws

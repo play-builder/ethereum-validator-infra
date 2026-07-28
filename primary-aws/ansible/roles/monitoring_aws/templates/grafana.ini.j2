@@ -1,0 +1,14 @@
+; eth-failover primary — 공개 노출 금지: 127.0.0.1 바인드, 접근은 SSH 터널
+; ssh -L 3000:127.0.0.1:3000 ubuntu@<EIP>  →  http://localhost:3000
+[server]
+http_addr = 127.0.0.1
+http_port = 3000
+[security]
+admin_user = admin
+; 최초 로그인 후 즉시 변경. 비밀번호를 이 파일/저장소에 두지 않는다.
+[analytics]
+reporting_enabled = false
+check_for_updates = false
+[paths]
+data = /var/lib/grafana
+provisioning = /etc/grafana/provisioning

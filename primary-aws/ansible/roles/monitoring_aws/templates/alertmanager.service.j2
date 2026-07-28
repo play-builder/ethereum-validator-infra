@@ -1,0 +1,16 @@
+[Unit]
+Description=Alertmanager (eth-failover primary)
+After=network-online.target
+[Service]
+User=prometheus
+ExecStart=/opt/ethereum/alertmanager-{{ alertmanager_version }}.linux-amd64/alertmanager \
+  --config.file=/etc/alertmanager.yml \
+  --storage.path=/var/lib/alertmanager \
+  --web.listen-address=127.0.0.1:9093
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alertmanager
+[Install]
+WantedBy=multi-user.target
