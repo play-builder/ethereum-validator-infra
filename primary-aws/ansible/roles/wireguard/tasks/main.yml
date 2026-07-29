@@ -1,0 +1,48 @@
+---
+- name: WireGuard peer IPv4와 공개키는 교차 트랙 활성화에서만 수락
+  ansible.builtin.assert:
+    that:
+      - wg_peer_public_ip is string
+      - wg_peer_public_ip is match('^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$')
+      - wg_peer_public_key is string
+      - wg_peer_public_key | length > 0
+      - wg_peer_public_key is not match('.*REPLACE_.*')
+      - wg_peer_public_key | trim == wg_peer_public_key
+      - wg_peer_public_key is match('^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$')
+      - wg_peer_public_key != 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+    fail_msg: >-
+      WireGuard를 시작하기 전에 backup peer의 canonical plain IPv4와 실제 공개키를
+      group_vars/all.yml에 교차 기입하십시오. null, CIDR suffix, REPLACE_* 값, 공백,
+      all-zero key, 또는 32-byte base64 public key가 아닌 값은 허용하지 않습니다.
+
+- name: wireguard 패키지
+  ansible.builtin.apt:
+    name: [wireguard, awscli]
+    state: present
+
+- name: 개인키 수동 게이트 — Ansible은 키를 만들지 않는다 (D9/수동 경계)
+  ansible.builtin.stat:
+    path: /etc/wireguard/private.key
+  register: wg_key
+
+- name: 개인키 부재 시 지시와 함께 중단
+  ansible.builtin.fail:
+    msg: >-
+      /etc/wireguard/private.key 가 없습니다. 호스트에서 직접:
+      (umask 077 && wg genkey | sudo tee /etc/wireguard/private.key | wg pubkey | sudo tee /etc/wireguard/public.key)
+      공개키를 상대편 group_vars에 기입한 뒤 재실행하십시오.
+  when: not wg_key.stat.exists
+
+- name: wg0.conf
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: /etc/wireguard/wg0.conf
+    owner: root
+    mode: "0600"
+  notify: restart wg
+
+- name: wg-quick@wg0 활성화
+  ansible.builtin.systemd:
+    name: wg-quick@wg0.service
+    state: started
+    enabled: true

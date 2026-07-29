@@ -1,0 +1,12 @@
+# 관리 전용 터널 (D9): 모니터링 상호 스크레이프, EIP-3076 파일 전달, (선택 D10) BN 폴백.
+# 서명 트래픽·판단 경로는 이 터널에 의존하지 않는다.
+[Interface]
+Address = {{ wg_address_self }}
+ListenPort = {{ wg_listen_port }}
+PostUp = wg set %i private-key /etc/wireguard/private.key
+
+[Peer]
+PublicKey = {{ wg_peer_public_key }}
+AllowedIPs = {{ wg_peer_address }}
+Endpoint = {{ wg_peer_public_ip }}:{{ wg_listen_port }}
+PersistentKeepalive = 25

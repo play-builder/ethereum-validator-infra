@@ -1,0 +1,6 @@
+---
+- name: WireGuard 관리 터널 (D9 — 비서명 트래픽 전용)
+  hosts: primary_aws
+  become: true
+  roles:
+    - wireguard
