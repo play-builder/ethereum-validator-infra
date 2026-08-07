@@ -67,3 +67,13 @@ resource "aws_vpc_security_group_ingress_rule" "cl_quic_udp" {
   to_port           = 9001
   cidr_ipv4         = "0.0.0.0/0"
 }
+
+resource "aws_vpc_security_group_ingress_rule" "wireguard_peer" {
+  for_each          = var.backup_peer_public_ip == null ? {} : { peer = var.backup_peer_public_ip }
+  security_group_id = aws_security_group.node.id
+  description       = "WireGuard from Primary EC2 only"
+  ip_protocol       = "udp"
+  from_port         = 51820
+  to_port           = 51820
+  cidr_ipv4         = "${each.value}/32"
+}
