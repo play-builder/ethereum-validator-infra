@@ -1,0 +1,14 @@
+region                        = "eu-central-1"
+key_pair_name                 = "eth-failover-hoodi"
+node_ssh_public_key           = "ssh-ed25519 REPLACE_WITH_CH01_PUBLIC_KEY"
+node_instance_profile_name    = "eth-failover-hoodi-node"
+admin_cidrs                   = ["203.0.113.10/32"]
+backup_peer_public_ip         = "203.0.113.20"
+node_permissions_boundary_arn = "REPLACE_WITH_NODE_PERMISSIONS_BOUNDARY_ARN"
+terraform_plan_role_arn       = "REPLACE_WITH_TERRAFORM_PLAN_ROLE_ARN"
+terraform_apply_role_arn      = "REPLACE_WITH_TERRAFORM_APPLY_ROLE_ARN"
+kms_break_glass_role_arn      = "REPLACE_WITH_KMS_BREAK_GLASS_ROLE_ARN"
+sso_operator_permission_sets  = ["testnet_operator_01_builder", "testnet_operator_02_approver"]
+operator_alert_emails         = ["playbuilder47+testnet_op1@gmail.com", "playbuilder47+testnet_op2@gmail.com"]
+enable_deadman_alarm          = false
+enable_staging_bucket         = false

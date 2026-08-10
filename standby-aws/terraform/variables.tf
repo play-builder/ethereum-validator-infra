@@ -15,6 +15,12 @@ variable "region" {
   default     = "eu-central-1"
 }
 
+variable "kms_recovery_region" {
+  description = "Compatibility input rendered by the shared CI runtime."
+  type        = string
+  default     = "ap-northeast-2"
+}
+
 variable "key_pair_name" {
   description = "Regional EC2 key pair name imported by this Terraform root."
   type        = string
@@ -81,6 +87,26 @@ variable "validator_volume_size_gib" {
   type    = number
   default = 32
 }
+
+variable "node_permissions_boundary_arn" { type = string }
+variable "terraform_plan_role_arn" { type = string }
+variable "terraform_apply_role_arn" { type = string }
+variable "kms_break_glass_role_arn" { type = string }
+variable "sso_operator_permission_sets" {
+  description = "IAM Identity Center Permission Set names used by the shared KMS policy contract."
+  type        = list(string)
+
+  validation {
+    condition = length(var.sso_operator_permission_sets) == 2 && length(toset(var.sso_operator_permission_sets)) == 2 && alltrue([
+      for name in var.sso_operator_permission_sets :
+      can(regex("^[A-Za-z0-9_+=,.@-]{1,32}$", name))
+    ])
+    error_message = "sso_operator_permission_sets must contain exactly two distinct names of at most 32 characters."
+  }
+}
+variable "operator_alert_emails" { type = list(string) }
+variable "enable_deadman_alarm" { type = bool }
+variable "enable_staging_bucket" { type = bool }
 
 variable "allow_protected_destroy" {
   description = "Controls EC2 termination protection only. Data EBS lifecycle remains protected."
