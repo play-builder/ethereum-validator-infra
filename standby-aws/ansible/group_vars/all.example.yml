@@ -1,0 +1,64 @@
+---
+network: hoodi
+genesis_validators_root: "0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f"
+host_id: aws-standby-01
+counterparty_host_id: aws-primary-01
+
+data_mount: /data
+validator_state_mount: /var/lib/validator-state
+chain_device: /dev/nvme1n1
+validator_device: /dev/nvme2n1
+ethereum_group: ethereum
+users:
+  execution: nethermind
+  beacon: lighthouse-beacon
+  validator: lighthouse-validator
+
+checkpoint_sync_url: "https://hoodi.checkpoint.sigp.io"
+fee_recipient: "REPLACE_0x_FEE_RECIPIENT"
+graffiti: "s-aws"
+expected_scope: "vc-start-failover"
+expected_pubkeys: []
+vc_datadir: /var/lib/validator-state/lighthouse/validator
+
+wg_address_self: "10.88.0.2/32"
+wg_peer_address: "10.88.0.1/32"
+wg_peer_public_ip: "REPLACE_WITH_PRIMARY_EIP"
+wg_peer_public_key: "REPLACE_WITH_PRIMARY_WG_PUBLIC_KEY"
+wg_listen_port: 51820
+
+enable_mev_boost: false
+mev_boost_version: "1.12"
+mev_boost_sha256: "51e24be111c230526f39f4f278fe1b2319a7d81de36fcc3f4a441cd81b8687eb"
+mev_relays: []
+admin_ipv4_cidrs: ["203.0.113.10/32"]
+aws_region: "eu-central-1"
+sns_topic_arn: "REPLACE_WITH_PRIMARY_SNS_TOPIC_ARN"
+sns_region: "ap-northeast-2"  # reused node role can publish only to the Primary topic
+prometheus_version: "3.13.0"
+prometheus_sha256: "744d93324cc024d82089921737bd797474d7f1e5dbbfd1c6b387bad258538cb9"
+node_exporter_version: "1.11.1"
+node_exporter_sha256: "9f5ea48e5bc7b656f8a91a32e7d7deb89f70f73dabd0d974418aca15f37d6810"
+grafana_version: "13.1.0"
+grafana_build_id: "28013217238"
+grafana_sha256: "4f562bb224b8bb758b47789381babb284cb41687da8d714f2ff0e118e945e775"
+alertmanager_version: "0.32.1"
+alertmanager_sha256: "e3ba4a543111dd4bbf436838385cbf88108f0b128a723e61fe97d3569294ad4d"
+cloudwatch_namespace: "EthFailover/hoodi"
+enable_vc_monitoring: false  # sealed VC는 CH18 전까지 scrape하지 않음
+enable_peer_monitoring: false  # CH17 WireGuard handshake 뒤 true
+
+lighthouse_bn_execstart_base: >-
+  /opt/ethereum/lighthouse/current/lighthouse bn
+  --network={{ network }}
+  --datadir={{ data_mount }}/ethereum/lighthouse/beacon
+  --execution-endpoint=http://127.0.0.1:8551
+  --execution-jwt=/etc/ethereum/jwt.hex
+  --checkpoint-sync-url={{ checkpoint_sync_url }}
+  --http --http-address=127.0.0.1 --http-port=5052
+  --metrics --metrics-address=0.0.0.0 --metrics-port=5054
+  --validator-monitor-auto
+  --port=9000 --quic-port=9001
+vc_beacon_nodes: "http://127.0.0.1:5052"
+lease_check_interval: "*:0/1"
+lease_grace_s: 0
