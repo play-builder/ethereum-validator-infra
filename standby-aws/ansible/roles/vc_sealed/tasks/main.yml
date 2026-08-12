@@ -1,0 +1,20 @@
+---
+        - name: Install the shared gated Lighthouse VC implementation
+          ansible.builtin.include_role:
+            name: lighthouse_vc_gated
+
+        - name: Read the vc-sealed systemd state
+          ansible.builtin.command:
+            argv: [systemctl, is-enabled, lighthouse-validator.service]
+          register: standby_vc_enabled
+          changed_when: false
+          failed_when: standby_vc_enabled.stdout | trim != 'masked'
+
+        - name: Record the vc-sealed default without creating an activation token
+          ansible.builtin.copy:
+            dest: /etc/ethereum/failover/STANDBY-SEALED-STATE.txt
+            owner: root
+            group: root
+            mode: "0644"
+            content: "vc-sealed: lighthouse-validator.service is masked until the approved failover runbook
+"

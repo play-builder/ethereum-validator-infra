@@ -1,0 +1,25 @@
+---
+- name: Start Standby EL and BN while keeping VC sealed
+  hosts: aws_standby
+  become: true
+  tasks:
+    - name: Start Standby Nethermind
+      ansible.builtin.systemd:
+        name: nethermind.service
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Start Standby Lighthouse Beacon Node
+      ansible.builtin.systemd:
+        name: lighthouse-beacon.service
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Verify the Standby validator remains masked
+      ansible.builtin.command:
+        argv: [systemctl, is-enabled, lighthouse-validator.service]
+      register: standby_vc_enabled
+      changed_when: false
+      failed_when: standby_vc_enabled.stdout | trim != 'masked'

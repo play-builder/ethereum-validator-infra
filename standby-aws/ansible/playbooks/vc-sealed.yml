@@ -1,0 +1,6 @@
+---
+- name: Re-assert Standby validator sealed state
+  hosts: aws_standby
+  become: true
+  roles:
+    - vc_sealed
