@@ -1,0 +1,6 @@
+---
+- name: Mount reviewed Standby EBS data volumes
+  hosts: aws_standby
+  become: true
+  roles:
+    - aws_ebs_mounts

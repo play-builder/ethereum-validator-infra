@@ -1,0 +1,7 @@
+---
+- name: AWS Standby host foundation
+  hosts: aws_standby
+  become: true
+  roles:
+    - base_os
+    - hardening

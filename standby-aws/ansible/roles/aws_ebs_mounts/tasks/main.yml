@@ -1,0 +1,92 @@
+---
+- name: Require explicit reviewed EBS device paths
+  ansible.builtin.assert:
+    that:
+      - chain_device is match('^/dev/nvme[0-9]+n1$')
+      - validator_device is match('^/dev/nvme[0-9]+n1$')
+      - chain_device != validator_device
+    fail_msg: Match both NVMe serials to Terraform EBS volume IDs before applying this role
+
+- name: Inspect reviewed EBS block devices
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ chain_device }}"
+    - "{{ validator_device }}"
+  register: standby_ebs_devices
+
+- name: Require both reviewed EBS block devices
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isblk | default(false)
+  loop: "{{ standby_ebs_devices.results }}"
+
+- name: Read existing filesystem types
+  ansible.builtin.command:
+    argv: [blkid, -o, value, -s, TYPE, "{{ item }}"]
+  loop:
+    - "{{ chain_device }}"
+    - "{{ validator_device }}"
+  register: standby_ebs_filesystems
+  changed_when: false
+  failed_when: standby_ebs_filesystems.rc not in [0, 2]
+
+- name: Create ext4 only on reviewed blank EBS devices
+  ansible.builtin.command:
+    argv: [mkfs.ext4, -F, "{{ item.item }}"]
+  loop: "{{ standby_ebs_filesystems.results }}"
+  when: item.rc == 2 or item.stdout | trim == ''
+
+- name: Accept only blank or existing ext4 EBS devices
+  ansible.builtin.assert:
+    that:
+      - item.rc == 2 or item.stdout | trim in ['', 'ext4']
+    fail_msg: Existing non-ext4 data volumes require a separately reviewed migration
+  loop: "{{ standby_ebs_filesystems.results }}"
+
+- name: Read EBS filesystem UUIDs
+  ansible.builtin.command:
+    argv: [blkid, -o, value, -s, UUID, "{{ item }}"]
+  loop:
+    - "{{ chain_device }}"
+    - "{{ validator_device }}"
+  register: standby_ebs_uuids
+  changed_when: false
+
+- name: Create data mount points
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ data_mount }}"
+    - "{{ validator_state_mount }}"
+
+- name: Persist reviewed EBS mounts by UUID
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^UUID=.*\s+{{ item.mount | regex_escape }}\s+'
+    line: "UUID={{ item.uuid }} {{ item.mount }} ext4 defaults,nofail 0 2"
+    state: present
+  loop:
+    - { uuid: "{{ standby_ebs_uuids.results[0].stdout | trim }}", mount: "{{ data_mount }}" }
+    - { uuid: "{{ standby_ebs_uuids.results[1].stdout | trim }}", mount: "{{ validator_state_mount }}" }
+
+- name: Read current EBS mount state
+  ansible.builtin.command:
+    argv: [mountpoint, -q, "{{ item }}"]
+  loop:
+    - "{{ data_mount }}"
+    - "{{ validator_state_mount }}"
+  register: standby_mountpoints
+  changed_when: false
+  failed_when: standby_mountpoints.rc not in [0, 1]
+
+- name: Mount EBS data filesystems from fstab
+  ansible.builtin.command:
+    argv: [mount, "{{ item.item }}"]
+  loop: "{{ standby_mountpoints.results }}"
+  when: item.rc == 1

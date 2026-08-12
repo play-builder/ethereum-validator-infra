@@ -1,0 +1,6 @@
+---
+- name: Prepare AWS Standby base OS without crossing the JWT boundary
+  hosts: aws_standby
+  become: true
+  roles:
+    - base_os
