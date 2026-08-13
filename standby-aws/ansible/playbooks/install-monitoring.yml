@@ -1,0 +1,6 @@
+---
+- name: Install Standby monitoring
+  hosts: aws_standby
+  become: true
+  roles:
+    - monitoring_aws

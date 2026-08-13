@@ -1,0 +1,6 @@
+---
+- name: Configure Standby WireGuard management tunnel
+  hosts: aws_standby
+  become: true
+  roles:
+    - wireguard
