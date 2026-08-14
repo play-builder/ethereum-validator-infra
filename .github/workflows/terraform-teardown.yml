@@ -1,0 +1,426 @@
+name: Terraform teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Exact workload environment to destroy
+        required: true
+        type: choice
+        options:
+          - hoodi-testnet-dev
+      typed_confirmation:
+        description: "typed confirmation: enter exactly hoodi-testnet-dev"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-hoodi-testnet-dev
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: true
+  TF_INPUT: false
+  TERRAFORM_VERSION: 1.15.8
+  DEPLOYMENT_ENVIRONMENT: hoodi-testnet-dev
+  TEARDOWN_ENVIRONMENT: hoodi-testnet-dev-teardown
+  DISPATCH_ENVIRONMENT: ${{ inputs.environment }}
+  TYPED_CONFIRMATION: ${{ inputs.typed_confirmation }}
+  RUNTIME_MANIFEST: primary-aws/terraform/ci/runtime-inputs.json
+
+jobs:
+  teardown-plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      plan_object_key: ${{ steps.publish.outputs.plan_object_key }}
+      plan_object_version_id: ${{ steps.publish.outputs.plan_object_version_id }}
+      metadata_object_key: ${{ steps.publish.outputs.metadata_object_key }}
+      metadata_object_version_id: ${{ steps.publish.outputs.metadata_object_version_id }}
+      runtime_inputs_sha256: ${{ steps.publish.outputs.runtime_inputs_sha256 }}
+      runtime_manifest_sha256: ${{ steps.publish.outputs.runtime_manifest_sha256 }}
+      plan_sha256: ${{ steps.publish.outputs.plan_sha256 }}
+      plan_expires_at: ${{ steps.publish.outputs.plan_expires_at }}
+    steps:
+      - name: Check out exact protected-main commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require typed confirmation and a new protected-main run
+        shell: bash
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_ENVIRONMENT" = "$DEPLOYMENT_ENVIRONMENT" || { echo "unexpected environment" >&2; exit 1; }
+          test "$TYPED_CONFIRMATION" = "$DEPLOYMENT_ENVIRONMENT" || { echo "typed confirmation mismatch" >&2; exit 1; }
+          test "$GITHUB_REF" = "refs/heads/main" || { echo "teardown must dispatch from protected main" >&2; exit 1; }
+          test "$GITHUB_RUN_ATTEMPT" = "1" || { echo "re-run failed jobs is forbidden; dispatch a new teardown workflow" >&2; exit 1; }
+          test -n "${GH_READ_TOKEN:-}" || { echo "missing read-only GitHub token" >&2; exit 1; }
+          origin_main="$(
+            curl --fail --silent --show-error --retry 3 \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer $GH_READ_TOKEN" \
+              --header "X-GitHub-Api-Version: 2026-03-10" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+              | jq -er .object.sha
+          )"
+          test -n "$origin_main" || { echo "cannot resolve protected main" >&2; exit 1; }
+          test "$GITHUB_SHA" = "$origin_main" || { echo "teardown SHA is not exact main tip" >&2; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" "$origin_main"
+
+      - name: Validate and render the tracked teardown runtime manifest
+        id: runtime
+        shell: bash
+        env:
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          EXPECTED_OWNER_ID: ${{ github.repository_owner_id }}
+          EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/terraform-runtime-teardown-plan"
+          python3 shared/scripts/render-terraform-ci-runtime.py \
+            --manifest "$RUNTIME_MANIFEST" \
+            --mode teardown \
+            --output-dir "$runtime_dir" \
+            --expected-repository "$EXPECTED_REPOSITORY" \
+            --expected-owner-id "$EXPECTED_OWNER_ID" \
+            --expected-repository-id "$EXPECTED_REPOSITORY_ID" \
+            --expected-environment "$DEPLOYMENT_ENVIRONMENT" \
+            > "$RUNNER_TEMP/terraform-runtime-teardown-render.json"
+          control="$runtime_dir/control.json"
+          {
+            echo "plan_role_arn=$(jq -er .plan_role_arn "$control")"
+            echo "apply_role_arn=$(jq -er .apply_role_arn "$control")"
+            echo "aws_account_id=$(jq -er .aws_account_id "$control")"
+            echo "aws_region=$(jq -er .aws_region "$control")"
+            echo "state_bucket=$(jq -er .state_bucket "$control")"
+            echo "state_key=$(jq -er .state_key "$control")"
+            echo "state_kms_key_arn=$(jq -er .state_kms_key_arn "$control")"
+            echo "artifact_bucket=$(jq -er .plan_artifact_bucket "$control")"
+            echo "artifact_kms_key_arn=$(jq -er .plan_artifact_kms_key_arn "$control")"
+            echo "runtime_manifest_sha256=$(jq -er .runtime_manifest_sha256 "$control")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Configure PlanRole for the destroy plan only
+        uses: aws-actions/configure-aws-credentials@acca2b1b2070338fb9fd1ca27ecee81d687e58e5 # v6.1.2
+        with:
+          role-to-assume: ${{ steps.runtime.outputs.plan_role_arn }}
+          role-session-name: terraform-teardown-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ steps.runtime.outputs.aws_region }}
+          allowed-account-ids: ${{ steps.runtime.outputs.aws_account_id }}
+          mask-aws-account-id: false
+
+      - name: Verify exact PlanRole caller and runner region
+        shell: bash
+        env:
+          EXPECTED_AWS_ACCOUNT_ID: ${{ steps.runtime.outputs.aws_account_id }}
+          EXPECTED_AWS_REGION: ${{ steps.runtime.outputs.aws_region }}
+          EXPECTED_PLAN_ROLE_ARN: ${{ steps.runtime.outputs.plan_role_arn }}
+        run: |
+          set -euo pipefail
+          caller="$(aws sts get-caller-identity --output json)"
+          test "$(jq -r .Account <<<"$caller")" = "$EXPECTED_AWS_ACCOUNT_ID" || { echo "wrong AWS account" >&2; exit 1; }
+          expected_role_name="${EXPECTED_PLAN_ROLE_ARN##*/}"
+          actual_role_name="$(jq -er '.Arn | capture("^arn:aws:sts::[0-9]{12}:assumed-role/(?<role>[^/]+)/[^/]+$").role' <<<"$caller")"
+          test "$actual_role_name" = "$expected_role_name" || { echo "wrong PlanRole" >&2; exit 1; }
+          test "$AWS_REGION" = "$EXPECTED_AWS_REGION" || { echo "wrong AWS region" >&2; exit 1; }
+          test "$AWS_DEFAULT_REGION" = "$EXPECTED_AWS_REGION" || { echo "wrong AWS region" >&2; exit 1; }
+
+      - name: Verify prepared state and create the immutable destroy plan
+        shell: bash
+        env:
+          EXPECTED_AWS_ACCOUNT_ID: ${{ steps.runtime.outputs.aws_account_id }}
+          EXPECTED_AWS_REGION: ${{ steps.runtime.outputs.aws_region }}
+          EXPECTED_APPLY_ROLE_ARN: ${{ steps.runtime.outputs.apply_role_arn }}
+          RUNTIME_MANIFEST_SHA256: ${{ steps.runtime.outputs.runtime_manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/terraform-runtime-teardown-plan"
+          evidence_dir="$RUNNER_TEMP/terraform-teardown"
+          mkdir -p "$evidence_dir"
+          cleanup() {
+            rm -f primary-aws/terraform/tf.plan primary-aws/terraform/tf.plan.json "$evidence_dir/current-state.json"
+          }
+          trap cleanup EXIT
+          test "$(terraform version -json | jq -r .terraform_version)" = "$TERRAFORM_VERSION" || { echo "Terraform version mismatch" >&2; exit 1; }
+          test "$(jq -er .runtime_manifest_sha256 "$runtime_dir/control.json")" = "$RUNTIME_MANIFEST_SHA256" || { echo "runtime manifest output mismatch" >&2; exit 1; }
+          jq -e '.allow_protected_destroy == true' "$runtime_dir/ci.auto.tfvars.json" >/dev/null \
+            || { echo "protected destroy preparation is absent: allow_protected_destroy:true was not rendered" >&2; exit 1; }
+          terraform -chdir=primary-aws/terraform init -backend-config="$runtime_dir/backend.hcl" -lockfile=readonly
+          terraform -chdir=primary-aws/terraform show -json > "$evidence_dir/current-state.json"
+          staging_enabled="$(jq -c 'if (has("enable_staging_bucket") and ((.enable_staging_bucket | type) == "boolean")) then .enable_staging_bucket else error("missing or invalid enable_staging_bucket") end' "$runtime_dir/ci.auto.tfvars.json")"
+          jq -e --argjson staging_enabled "$staging_enabled" '
+            def resources: [.values.root_module | recurse(.child_modules[]?) | .resources[]?];
+            resources as $resources
+            | ($resources | map(select(.address == "aws_instance.node"))) as $nodes
+            | ($resources | map(select(.address == "aws_s3_bucket.staging[0]"))) as $staging
+            | (($nodes | length) == 0 or (($nodes | length) == 1 and $nodes[0].type == "aws_instance" and $nodes[0].values.disable_api_termination == false))
+              and (
+                if $staging_enabled then
+                  (($staging | length) == 0 or (($staging | length) == 1 and $staging[0].type == "aws_s3_bucket" and $staging[0].values.force_destroy == true))
+                else
+                  ($staging | length) == 0
+                end
+              )
+          ' "$evidence_dir/current-state.json" >/dev/null \
+            || { echo "protected resource state is unprepared: remaining EC2 must have disable_api_termination == false and any staging S3 must have force_destroy == true" >&2; exit 1; }
+          terraform -chdir=primary-aws/terraform plan -destroy -input=false -lock-timeout=5m -out=tf.plan -var-file="$runtime_dir/ci.auto.tfvars.json"
+          terraform -chdir=primary-aws/terraform show -json tf.plan > primary-aws/terraform/tf.plan.json
+          jq -e --argjson staging_enabled "$staging_enabled" -f primary-aws/terraform/ci/teardown-policy.jq primary-aws/terraform/tf.plan.json >/dev/null \
+            || { echo "TEARDOWN_PASS=FAIL: destroy plan is not fully prepared or includes non-delete actions" >&2; exit 1; }
+          echo "TEARDOWN_PASS=PASS"
+          jq -c -e -f primary-aws/terraform/ci/plan-summary.jq primary-aws/terraform/tf.plan.json > "$evidence_dir/summary.json"
+          mv primary-aws/terraform/tf.plan "$evidence_dir/tf.plan"
+          plan_sha256="$(sha256sum "$evidence_dir/tf.plan" | awk '{print $1}')"
+          lock_sha256="$(sha256sum primary-aws/terraform/.terraform.lock.hcl | awk '{print $1}')"
+          backend_fingerprint="$(sha256sum "$runtime_dir/backend.hcl" | awk '{print $1}')"
+          expires_at="$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg commit "$GITHUB_SHA" \
+            --arg environment "$TEARDOWN_ENVIRONMENT" \
+            --arg account "$EXPECTED_AWS_ACCOUNT_ID" \
+            --arg region "$EXPECTED_AWS_REGION" \
+            --arg terraform_version "$TERRAFORM_VERSION" \
+            --arg lock_sha "$lock_sha256" \
+            --arg backend_sha "$backend_fingerprint" \
+            --arg runtime_manifest_sha "$RUNTIME_MANIFEST_SHA256" \
+            --arg plan_sha "$plan_sha256" \
+            --arg apply_role "$EXPECTED_APPLY_ROLE_ARN" \
+            --arg expires_at "$expires_at" \
+            '{schema_version:1,repository:$repository,workflow_run_id:$run_id,workflow_run_attempt:($run_attempt|tonumber),commit_sha:$commit,environment:$environment,operation:"teardown",aws_account_id:$account,aws_region:$region,terraform_version:$terraform_version,provider_lock_sha256:$lock_sha,backend_fingerprint:$backend_sha,runtime_inputs_sha256:$runtime_manifest_sha,runtime_manifest_sha256:$runtime_manifest_sha,plan_sha256:$plan_sha,terraform_apply_role_arn:$apply_role,plan_object_version_id:null,policy_gate:"TEARDOWN_PASS",created_at:(now|todateiso8601),expires_at:$expires_at}' \
+            > "$evidence_dir/metadata.json"
+          rm -f primary-aws/terraform/tf.plan.json "$evidence_dir/current-state.json"
+
+      - name: Render reviewer-visible Terraform plan diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          plan_file="$RUNNER_TEMP/terraform-teardown/tf.plan"
+          test -f "$plan_file" || { echo "reviewable saved teardown plan is missing" >&2; exit 1; }
+          echo "::group::Terraform teardown plan diff for protected Environment reviewer"
+          terraform -chdir=primary-aws/terraform show -no-color "$plan_file"
+          echo "::endgroup::"
+
+      - name: Upload immutable encrypted teardown plan
+        id: publish
+        shell: bash
+        env:
+          ARTIFACT_BUCKET: ${{ steps.runtime.outputs.artifact_bucket }}
+          ARTIFACT_KMS_KEY_ARN: ${{ steps.runtime.outputs.artifact_kms_key_arn }}
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/terraform-teardown"
+          plan_object_key="$GITHUB_REPOSITORY/hoodi-testnet-dev-teardown/$GITHUB_SHA/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT/tf.plan"
+          metadata_object_key="$GITHUB_REPOSITORY/hoodi-testnet-dev-teardown/$GITHUB_SHA/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT/metadata.json"
+          plan_response="$(aws s3api put-object --bucket "$ARTIFACT_BUCKET" --key "$plan_object_key" --body "$evidence_dir/tf.plan" --if-none-match '*' --server-side-encryption aws:kms --ssekms-key-id "$ARTIFACT_KMS_KEY_ARN")"
+          plan_object_version_id="$(jq -er .VersionId <<<"$plan_response")"
+          jq --arg version "$plan_object_version_id" '.plan_object_version_id = $version' "$evidence_dir/metadata.json" > "$evidence_dir/metadata-bound.json"
+          metadata_response="$(aws s3api put-object --bucket "$ARTIFACT_BUCKET" --key "$metadata_object_key" --body "$evidence_dir/metadata-bound.json" --if-none-match '*' --server-side-encryption aws:kms --ssekms-key-id "$ARTIFACT_KMS_KEY_ARN")"
+          {
+            echo "plan_object_key=$plan_object_key"
+            echo "plan_object_version_id=$plan_object_version_id"
+            echo "metadata_object_key=$metadata_object_key"
+            echo "metadata_object_version_id=$(jq -er .VersionId <<<"$metadata_response")"
+            echo "runtime_inputs_sha256=$(jq -er .runtime_inputs_sha256 "$evidence_dir/metadata-bound.json")"
+            echo "runtime_manifest_sha256=$(jq -er .runtime_manifest_sha256 "$evidence_dir/metadata-bound.json")"
+            echo "plan_sha256=$(jq -er .plan_sha256 "$evidence_dir/metadata-bound.json")"
+            echo "plan_expires_at=$(jq -er .expires_at "$evidence_dir/metadata-bound.json")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish sanitized teardown approval evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/terraform-runtime-teardown-plan"
+          evidence_dir="$RUNNER_TEMP/terraform-teardown"
+          echo "## Terraform teardown saved plan: TEARDOWN_PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Canonical reviewed runtime manifest" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          jq . "$runtime_dir/runtime-inputs.canonical.json" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '. as $summary | "Action counts: create=\($summary.counts.create), update=\($summary.counts.update), delete=\($summary.counts.delete), replace=\($summary.counts.replace), read=\($summary.counts.read)", "", "| Resource address | Actions |", "| --- | --- |", ($summary.changes[] | "| \(.address | gsub("\\|"; "&#124;") | gsub("`"; "&#96;")) | \(.actions | join(", ")) |")' "$evidence_dir/summary.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "Plan SHA-256: \`${{ steps.publish.outputs.plan_sha256 }}\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "S3 plan VersionId: \`${{ steps.publish.outputs.plan_object_version_id }}\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Expires at: \`${{ steps.publish.outputs.plan_expires_at }}\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Runtime input SHA-256: \`${{ steps.publish.outputs.runtime_inputs_sha256 }}\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: \`$GITHUB_SHA\`; run: \`$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT\`." >> "$GITHUB_STEP_SUMMARY"
+          echo 'Do not approve from the address/action table alone. Open this same run and review the complete output of the `Render reviewer-visible Terraform plan diff` step; Terraform-sensitive values remain redacted.' >> "$GITHUB_STEP_SUMMARY"
+          echo "Saved-plan binary is encrypted in versioned S3 and is not attached to GitHub." >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$evidence_dir/tf.plan" "$evidence_dir/metadata.json" "$evidence_dir/metadata-bound.json" "$evidence_dir/summary.json"
+
+  teardown-apply:
+    needs: teardown-plan
+    environment: hoodi-testnet-dev-teardown
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact plan-bound commit after teardown approval
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reconfirm the approved teardown commit is still the protected main tip
+        shell: bash
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_READ_TOKEN:-}" || { echo "missing read-only GitHub token" >&2; exit 1; }
+          origin_main="$(
+            curl --fail --silent --show-error --retry 3 \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer $GH_READ_TOKEN" \
+              --header "X-GitHub-Api-Version: 2026-03-10" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+              | jq -er .object.sha
+          )"
+          test "$GITHUB_SHA" = "$origin_main" || { echo "approved teardown plan is no longer the exact main tip; dispatch a new run" >&2; exit 1; }
+
+      - name: Re-render the tracked teardown runtime manifest after approval
+        id: runtime
+        shell: bash
+        env:
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          EXPECTED_OWNER_ID: ${{ github.repository_owner_id }}
+          EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_ENVIRONMENT" = "$DEPLOYMENT_ENVIRONMENT" || { echo "unexpected environment" >&2; exit 1; }
+          test "$TYPED_CONFIRMATION" = "$DEPLOYMENT_ENVIRONMENT" || { echo "typed confirmation mismatch" >&2; exit 1; }
+          test "$GITHUB_RUN_ATTEMPT" = "1" || { echo "re-run failed jobs is forbidden; dispatch a new teardown workflow" >&2; exit 1; }
+          runtime_dir="$RUNNER_TEMP/terraform-runtime-teardown-apply"
+          python3 shared/scripts/render-terraform-ci-runtime.py \
+            --manifest "$RUNTIME_MANIFEST" \
+            --mode teardown \
+            --output-dir "$runtime_dir" \
+            --expected-repository "$EXPECTED_REPOSITORY" \
+            --expected-owner-id "$EXPECTED_OWNER_ID" \
+            --expected-repository-id "$EXPECTED_REPOSITORY_ID" \
+            --expected-environment "$DEPLOYMENT_ENVIRONMENT" \
+            > "$RUNNER_TEMP/terraform-runtime-teardown-apply-render.json"
+          control="$runtime_dir/control.json"
+          {
+            echo "plan_role_arn=$(jq -er .plan_role_arn "$control")"
+            echo "apply_role_arn=$(jq -er .apply_role_arn "$control")"
+            echo "aws_account_id=$(jq -er .aws_account_id "$control")"
+            echo "aws_region=$(jq -er .aws_region "$control")"
+            echo "state_bucket=$(jq -er .state_bucket "$control")"
+            echo "state_key=$(jq -er .state_key "$control")"
+            echo "state_kms_key_arn=$(jq -er .state_kms_key_arn "$control")"
+            echo "artifact_bucket=$(jq -er .plan_artifact_bucket "$control")"
+            echo "runtime_manifest_sha256=$(jq -er .runtime_manifest_sha256 "$control")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Configure ApplyRole after teardown environment approval
+        uses: aws-actions/configure-aws-credentials@acca2b1b2070338fb9fd1ca27ecee81d687e58e5 # v6.1.2
+        with:
+          role-to-assume: ${{ steps.runtime.outputs.apply_role_arn }}
+          role-session-name: terraform-teardown-apply-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ steps.runtime.outputs.aws_region }}
+          allowed-account-ids: ${{ steps.runtime.outputs.aws_account_id }}
+          mask-aws-account-id: false
+
+      - name: Download and bind the exact teardown plan before apply
+        shell: bash
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          EXPECTED_AWS_ACCOUNT_ID: ${{ steps.runtime.outputs.aws_account_id }}
+          EXPECTED_AWS_REGION: ${{ steps.runtime.outputs.aws_region }}
+          EXPECTED_APPLY_ROLE_ARN: ${{ steps.runtime.outputs.apply_role_arn }}
+          STATE_BUCKET: ${{ steps.runtime.outputs.state_bucket }}
+          ARTIFACT_BUCKET: ${{ steps.runtime.outputs.artifact_bucket }}
+          CURRENT_RUNTIME_MANIFEST_SHA256: ${{ steps.runtime.outputs.runtime_manifest_sha256 }}
+          PLAN_RUNTIME_MANIFEST_SHA256: ${{ needs.teardown-plan.outputs.runtime_manifest_sha256 }}
+          EXPECTED_PLAN_SHA256: ${{ needs.teardown-plan.outputs.plan_sha256 }}
+          EXPECTED_PLAN_OBJECT_KEY: ${{ needs.teardown-plan.outputs.plan_object_key }}
+          EXPECTED_PLAN_OBJECT_VERSION_ID: ${{ needs.teardown-plan.outputs.plan_object_version_id }}
+          EXPECTED_METADATA_OBJECT_KEY: ${{ needs.teardown-plan.outputs.metadata_object_key }}
+          EXPECTED_METADATA_OBJECT_VERSION_ID: ${{ needs.teardown-plan.outputs.metadata_object_version_id }}
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/terraform-runtime-teardown-apply"
+          metadata_file="$RUNNER_TEMP/terraform-teardown-metadata.json"
+          cleanup() {
+            rm -f primary-aws/terraform/tf.plan "$metadata_file"
+          }
+          trap cleanup EXIT
+          for value in "$EXPECTED_PLAN_OBJECT_KEY" "$EXPECTED_PLAN_OBJECT_VERSION_ID" "$EXPECTED_METADATA_OBJECT_KEY" "$EXPECTED_METADATA_OBJECT_VERSION_ID" "$PLAN_RUNTIME_MANIFEST_SHA256" "$EXPECTED_PLAN_SHA256"; do
+            test -n "$value" || { echo "missing immutable teardown-plan output" >&2; exit 1; }
+          done
+          test "$CURRENT_RUNTIME_MANIFEST_SHA256" = "$PLAN_RUNTIME_MANIFEST_SHA256" || { echo "runtime manifest job-output mismatch" >&2; exit 1; }
+          caller="$(aws sts get-caller-identity --output json)"
+          test "$(jq -r .Account <<<"$caller")" = "$EXPECTED_AWS_ACCOUNT_ID" || { echo "wrong AWS account" >&2; exit 1; }
+          expected_role_name="${EXPECTED_APPLY_ROLE_ARN##*/}"
+          actual_role_name="$(jq -er '.Arn | capture("^arn:aws:sts::[0-9]{12}:assumed-role/(?<role>[^/]+)/[^/]+$").role' <<<"$caller")"
+          test "$actual_role_name" = "$expected_role_name" || { echo "wrong ApplyRole" >&2; exit 1; }
+          test "$AWS_REGION" = "$EXPECTED_AWS_REGION" || { echo "wrong AWS region" >&2; exit 1; }
+          test "$AWS_DEFAULT_REGION" = "$EXPECTED_AWS_REGION" || { echo "wrong AWS region" >&2; exit 1; }
+          test "$(terraform version -json | jq -r .terraform_version)" = "$TERRAFORM_VERSION" || { echo "Terraform version mismatch" >&2; exit 1; }
+          aws s3api get-object --bucket "$ARTIFACT_BUCKET" --key "$EXPECTED_METADATA_OBJECT_KEY" --version-id "$EXPECTED_METADATA_OBJECT_VERSION_ID" "$metadata_file" >/dev/null
+          aws s3api get-object --bucket "$ARTIFACT_BUCKET" --key "$EXPECTED_PLAN_OBJECT_KEY" --version-id "$EXPECTED_PLAN_OBJECT_VERSION_ID" primary-aws/terraform/tf.plan >/dev/null
+          plan_sha256="$(sha256sum primary-aws/terraform/tf.plan | awk '{print $1}')"
+          lock_sha256="$(sha256sum primary-aws/terraform/.terraform.lock.hcl | awk '{print $1}')"
+          backend_fingerprint="$(sha256sum "$runtime_dir/backend.hcl" | awk '{print $1}')"
+          test "$plan_sha256" = "$EXPECTED_PLAN_SHA256" || { echo "saved teardown plan hash mismatch" >&2; exit 1; }
+          jq -e '(.expires_at | fromdateiso8601) > now' "$metadata_file" >/dev/null || { echo "expired plan metadata" >&2; exit 1; }
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg commit "$GITHUB_SHA" \
+            --arg environment "$TEARDOWN_ENVIRONMENT" \
+            --arg account "$EXPECTED_AWS_ACCOUNT_ID" \
+            --arg region "$EXPECTED_AWS_REGION" \
+            --arg terraform_version "$TERRAFORM_VERSION" \
+            --arg lock_sha "$lock_sha256" \
+            --arg backend_sha "$backend_fingerprint" \
+            --arg runtime_manifest_sha "$CURRENT_RUNTIME_MANIFEST_SHA256" \
+            --arg plan_sha "$plan_sha256" \
+            --arg apply_role "$EXPECTED_APPLY_ROLE_ARN" \
+            --arg version "$EXPECTED_PLAN_OBJECT_VERSION_ID" \
+            '(.schema_version == 1) and (.repository == $repository) and (.workflow_run_id == $run_id) and (.workflow_run_attempt == $run_attempt) and (.commit_sha == $commit) and (.environment == $environment) and (.operation == "teardown") and (.aws_account_id == $account) and (.aws_region == $region) and (.terraform_version == $terraform_version) and (.provider_lock_sha256 == $lock_sha) and (.backend_fingerprint == $backend_sha) and (.runtime_inputs_sha256 == $runtime_manifest_sha) and (.runtime_manifest_sha256 == $runtime_manifest_sha) and (.plan_sha256 == $plan_sha) and (.terraform_apply_role_arn == $apply_role) and (.plan_object_version_id == $version) and (.policy_gate == "TEARDOWN_PASS")' \
+            "$metadata_file" >/dev/null || { echo "teardown metadata binding mismatch" >&2; exit 1; }
+          terraform -chdir=primary-aws/terraform init -backend-config="$runtime_dir/backend.hcl" -lockfile=readonly
+          test -n "${GH_READ_TOKEN:-}" || { echo "missing read-only GitHub token" >&2; exit 1; }
+          origin_main="$(
+            curl --fail --silent --show-error --retry 3 \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer $GH_READ_TOKEN" \
+              --header "X-GitHub-Api-Version: 2026-03-10" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/heads/main" \
+              | jq -er .object.sha
+          )"
+          test "$GITHUB_SHA" = "$origin_main" || { echo "approved teardown plan became stale immediately before apply; dispatch a new run" >&2; exit 1; }
+          jq -e '(.expires_at | fromdateiso8601) > now' "$metadata_file" >/dev/null || { echo "approved teardown plan expired immediately before apply; dispatch a new run" >&2; exit 1; }
+          terraform -chdir=primary-aws/terraform apply -input=false -lock-timeout=5m tf.plan
+          echo "## Terraform teardown: PASS" >> "$GITHUB_STEP_SUMMARY"
