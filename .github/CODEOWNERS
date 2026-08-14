@@ -1,0 +1,13 @@
+# Before the first push, CHAPTER 1 renders play-builder to the verified GitHub organization.
+/.github/workflows/        @play-builder/platform-approvers
+/.github/CODEOWNERS        @play-builder/security-approvers
+/primary-aws/terraform/    @play-builder/platform-approvers
+/primary-aws/terraform/ci/runtime-inputs.json @play-builder/security-approvers
+/primary-aws/bootstrap/    @play-builder/security-approvers
+/primary-aws/bootstrap/cicd/parameters.json @play-builder/security-approvers
+/primary-aws/ansible/      @play-builder/platform-approvers
+/standby-aws/terraform/    @play-builder/platform-approvers
+/standby-aws/terraform/ci/runtime-inputs.json @play-builder/security-approvers
+/standby-aws/ansible/      @play-builder/platform-approvers
+/shared/                   @play-builder/security-approvers
+/drills/                   @play-builder/security-approvers
