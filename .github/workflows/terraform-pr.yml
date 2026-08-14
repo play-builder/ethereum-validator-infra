@@ -1,0 +1,153 @@
+name: Terraform PR validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-static:
+    name: terraform-static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact event commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard the release edition against silent relabeling
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          test -f EDITION || { echo "CI_TEST_EDITION=FAIL reason=missing_edition" >&2; exit 1; }
+          CI_TEST_EDITION="$(cat EDITION)"
+          case "$CI_TEST_EDITION" in
+            lab|instructor) ;;
+            *) echo "CI_TEST_EDITION=FAIL reason=invalid_edition" >&2; exit 1 ;;
+          esac
+          CHECK_BASE=false
+          case "${GITHUB_EVENT_NAME:-}" in
+            pull_request) CHECK_BASE=true ;;
+            push)
+              if test -n "${BASE_SHA:-}" && test "$BASE_SHA" != "0000000000000000000000000000000000000000"; then
+                CHECK_BASE=true
+              fi
+              ;;
+          esac
+          if "$CHECK_BASE"; then
+            test -n "${BASE_SHA:-}" || { echo "RELEASE_EDITION_DRIFT=FAIL reason=missing_base_sha" >&2; exit 1; }
+            if git cat-file -e "${BASE_SHA}:EDITION" 2>/dev/null; then
+              BASE_EDITION="$(git show "${BASE_SHA}:EDITION")"
+              test "$CI_TEST_EDITION" = "$BASE_EDITION" || { echo "RELEASE_EDITION_DRIFT=FAIL base=${BASE_EDITION} head=${CI_TEST_EDITION}" >&2; exit 1; }
+            else
+              # 새 저장소의 첫 뼈대 PR/push: base가 repo 생성 README뿐이라 EDITION이 없다.
+              echo "EDITION_BASELINE_IMPORT=OK base=${BASE_SHA}"
+            fi
+          fi
+
+      - name: Install pinned Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Verify locked toolchain and statically validate Terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f primary-aws/terraform/versions.tf; then
+            test "$(cat .terraform-version)" = "1.15.8"
+            test "$(terraform version -json | jq -r .terraform_version)" = "1.15.8"
+            test -f primary-aws/terraform/.terraform.lock.hcl
+            terraform -chdir=primary-aws/terraform fmt -check -recursive
+            terraform -chdir=primary-aws/terraform init -backend=false -lockfile=readonly
+            terraform -chdir=primary-aws/terraform validate
+            terraform -chdir=primary-aws/terraform test
+            echo "TERRAFORM_STATIC=PASS"
+          else
+            echo "TERRAFORM_STATIC=SKIP reason=terraform_module_not_imported"
+          fi
+
+      - name: Run enabled contract suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tests/enabled.txt || { echo "CONTRACT_SUITES=FAIL reason=missing_enabled_manifest" >&2; exit 1; }
+          ran=0
+          while IFS= read -r suite; do
+            case "$suite" in ''|'#'*) continue ;; esac
+            test -f "$suite" || { echo "CONTRACT_SUITES=FAIL reason=missing_suite suite=$suite" >&2; exit 1; }
+            echo "── $suite"
+            case "$suite" in
+              *.py) python3 "$suite" ;;
+              *.sh) bash "$suite" ;;
+              *) echo "CONTRACT_SUITES=FAIL reason=unknown_suite_type suite=$suite" >&2; exit 1 ;;
+            esac
+            ran=$((ran+1))
+          done < tests/enabled.txt
+          test "$ran" -ge 1 || { echo "CONTRACT_SUITES=FAIL reason=empty_enabled_manifest" >&2; exit 1; }
+          echo "CONTRACT_SUITES=PASS suites=$ran"
+
+  docs-contract:
+    name: docs-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact event commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard the release edition against silent relabeling
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          test -f EDITION || { echo "CI_TEST_EDITION=FAIL reason=missing_edition" >&2; exit 1; }
+          CI_TEST_EDITION="$(cat EDITION)"
+          case "$CI_TEST_EDITION" in
+            lab|instructor) ;;
+            *) echo "CI_TEST_EDITION=FAIL reason=invalid_edition" >&2; exit 1 ;;
+          esac
+          CHECK_BASE=false
+          case "${GITHUB_EVENT_NAME:-}" in
+            pull_request) CHECK_BASE=true ;;
+            push)
+              if test -n "${BASE_SHA:-}" && test "$BASE_SHA" != "0000000000000000000000000000000000000000"; then
+                CHECK_BASE=true
+              fi
+              ;;
+          esac
+          if "$CHECK_BASE"; then
+            test -n "${BASE_SHA:-}" || { echo "RELEASE_EDITION_DRIFT=FAIL reason=missing_base_sha" >&2; exit 1; }
+            if git cat-file -e "${BASE_SHA}:EDITION" 2>/dev/null; then
+              BASE_EDITION="$(git show "${BASE_SHA}:EDITION")"
+              test "$CI_TEST_EDITION" = "$BASE_EDITION" || { echo "RELEASE_EDITION_DRIFT=FAIL base=${BASE_EDITION} head=${CI_TEST_EDITION}" >&2; exit 1; }
+            else
+              # 새 저장소의 첫 뼈대 PR/push: base가 repo 생성 README뿐이라 EDITION이 없다.
+              echo "EDITION_BASELINE_IMPORT=OK base=${BASE_SHA}"
+            fi
+          fi
+
+      - name: Validate CODEOWNERS and README contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/test_codeowners_render.py
+          test -f README.md
+          grep -Fq "GitHub Actions" README.md
+          grep -Fq "OIDC PlanRole/ApplyRole" README.md
+          grep -Fq "protected Environment" README.md
+          echo "DOCS_CONTRACT=PASS"
