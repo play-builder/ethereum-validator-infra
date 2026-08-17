@@ -1,0 +1,50 @@
+name: Ansible PR validation
+
+on:
+  pull_request:
+    paths:
+      - "primary-aws/ansible/**"
+      - ".github/workflows/ansible-pr.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "primary-aws/ansible/**"
+      - ".github/workflows/ansible-pr.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ansible-static:
+    name: ansible-static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact event commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install pinned Ansible toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user -r primary-aws/ansible/ci-requirements.txt
+          ansible --version | head -1
+
+      - name: Syntax-check every playbook against the example inventory
+        shell: bash
+        working-directory: primary-aws/ansible
+        run: |
+          set -euo pipefail
+          checked=0
+          for playbook in playbooks/*.yml; do
+            echo "── $playbook"
+            ansible-playbook --syntax-check -i inventory/hosts.example.yml "$playbook"
+            checked=$((checked+1))
+          done
+          test "$checked" -ge 1
+          echo "ANSIBLE_STATIC=PASS playbooks=$checked"
