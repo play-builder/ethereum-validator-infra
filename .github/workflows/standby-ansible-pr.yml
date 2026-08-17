@@ -1,0 +1,30 @@
+name: Standby Ansible PR validation
+
+on:
+  pull_request:
+    paths:
+      - "standby-aws/ansible/**"
+      - "primary-aws/ansible/roles/**"
+      - "shared/scripts/**"
+
+permissions:
+  contents: read
+
+jobs:
+  standby-ansible-static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Ansible
+        run: python3 -m pip install -r standby-aws/ansible/ci-requirements.txt
+      - name: Syntax check Standby playbooks
+        env:
+          ANSIBLE_CONFIG: standby-aws/ansible/ansible.cfg
+        run: |
+          cp standby-aws/ansible/inventory/hosts.example.yml standby-aws/ansible/inventory/hosts.yml
+          cp standby-aws/ansible/group_vars/all.example.yml standby-aws/ansible/group_vars/all.yml
+          for playbook in standby-aws/ansible/playbooks/*.yml; do
+            ansible-playbook -i standby-aws/ansible/inventory/hosts.yml "$playbook" --syntax-check
+          done
