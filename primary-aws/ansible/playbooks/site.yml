@@ -1,0 +1,7 @@
+---
+- import_playbook: host-foundation.yml
+- import_playbook: install-clients.yml
+- import_playbook: nethermind.yml
+- import_playbook: lighthouse-bn.yml
+- import_playbook: install-monitoring.yml
+- import_playbook: wireguard.yml
