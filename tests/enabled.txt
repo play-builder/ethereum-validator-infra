@@ -1,0 +1,25 @@
+# PR CI 계약 배터리 — 한 줄 = 한 suite. 각 슬라이스 PR이 자기 테스트와 함께
+# 여기에 한 줄을 추가한다(추가 전용). 이 파일은 CODEOWNERS 검토 대상이다.
+# ── G1 뼈대 ──
+tests/test_codeowners_render.py
+tests/test_terraform_pr_contract.py
+# ── G2 배포 파이프라인·부트스트랩 ──
+tests/test_terraform_deploy_contract.py
+tests/test_terraform_ci_runtime_manifest.py
+tests/test_terraform_cicd_iam_contract.py
+tests/test_sync_aws_runtime_outputs.py
+tests/test_bootstrap_baseline_check_runs.py
+tests/test_bootstrap_parameters.py
+tests/test_identity_center_verifier.py
+# ── T2 security group ──
+tests/test_sg_allowlist_contract.py
+# ── T4 KMS ──
+tests/test_human_kms_authority_contract.py
+# ── X1 teardown 파이프라인 (CH5) ──
+tests/test_terraform_teardown_contract.py
+tests/test_terraform_cicd_key_handoff.py
+shared/tests/test-terraform-cicd-boundary.sh
+tests/test_node_start_contract.py
+tests/test_lab_env_chain_values.py
+tests/test_release_supply_chain_contract.py
+tests/test_permission_set_name_limits.py
