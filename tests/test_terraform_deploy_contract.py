@@ -730,7 +730,7 @@ class TerraformDeployContractTests(unittest.TestCase):
 
     def test_ci_runtime_files_are_renderer_owned_not_handwritten_examples(self) -> None:
         self.assertTrue((ROOT / ".terraform-version").is_file())
-        self.assertEqual((ROOT / ".terraform-version").read_text(encoding="utf-8").strip(), "1.15.8")
+        self.assertEqual((ROOT / ".terraform-version").read_text(encoding="utf-8").strip(), "1.15.9")
         self.assertTrue((ROOT / "primary-aws/terraform/ci/plan-policy.jq").is_file())
         self.assertTrue((ROOT / "primary-aws/terraform/ci/plan-summary.jq").is_file())
         self.assertTrue(RUNTIME_MANIFEST.is_file())

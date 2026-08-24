@@ -57,7 +57,7 @@ jobs:
       - name: Install pinned Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.15.9
           terraform_wrapper: false
 
       - name: Verify locked toolchain and statically validate Terraform
@@ -65,8 +65,8 @@ jobs:
         run: |
           set -euo pipefail
           if test -f primary-aws/terraform/versions.tf; then
-            test "$(cat .terraform-version)" = "1.15.8"
-            test "$(terraform version -json | jq -r .terraform_version)" = "1.15.8"
+            test "$(cat .terraform-version)" = "1.15.9"
+            test "$(terraform version -json | jq -r .terraform_version)" = "1.15.9"
             test -f primary-aws/terraform/.terraform.lock.hcl
             terraform -chdir=primary-aws/terraform fmt -check -recursive
             terraform -chdir=primary-aws/terraform init -backend=false -lockfile=readonly

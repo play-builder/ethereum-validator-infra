@@ -57,8 +57,8 @@ class TerraformPrContractTests(unittest.TestCase):
             "TERRAFORM_STATIC=SKIP reason=terraform_module_not_imported", workflow
         )
         self.assertIn("TERRAFORM_STATIC=PASS", workflow)
-        self.assertIn('test "$(cat .terraform-version)" = "1.15.8"', workflow)
-        self.assertIn("terraform_version: 1.15.8", workflow)
+        self.assertIn('test "$(cat .terraform-version)" = "1.15.9"', workflow)
+        self.assertIn("terraform_version: 1.15.9", workflow)
         self.assertIn("terraform_wrapper: false", workflow)
 
     def test_contract_suites_run_from_the_reviewed_enabled_manifest(self) -> None:

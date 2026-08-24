@@ -25,7 +25,7 @@ concurrency:
 env:
   TF_IN_AUTOMATION: true
   TF_INPUT: false
-  TERRAFORM_VERSION: 1.15.8
+  TERRAFORM_VERSION: 1.15.9
   DEPLOYMENT_ENVIRONMENT: hoodi-testnet-dev
   DISPATCH_ENVIRONMENT: ${{ inputs.environment }}
   PREPARE_TEARDOWN: ${{ inputs.prepare_teardown }}
@@ -125,7 +125,7 @@ jobs:
       - name: Install pinned Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.15.9
           terraform_wrapper: false
 
       - name: Configure short-lived PlanRole credentials with GitHub OIDC
@@ -353,7 +353,7 @@ jobs:
       - name: Install pinned Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.15.9
           terraform_wrapper: false
 
       - name: Configure short-lived ApplyRole credentials after environment approval
