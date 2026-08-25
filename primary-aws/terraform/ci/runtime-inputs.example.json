@@ -30,8 +30,8 @@
       "testnet_operator_02_approver"
     ],
     "operator_alert_emails": [
-      "dev.playbuilder47+testnet_op1@gmail.com",
-      "dev.playbuilder47+testnet_op2@gmail.com"
+      "REPLACE_WITH_OPERATOR1_EMAIL",
+      "REPLACE_WITH_OPERATOR2_EMAIL"
     ],
     "enable_deadman_alarm": false,
     "enable_staging_bucket": true,

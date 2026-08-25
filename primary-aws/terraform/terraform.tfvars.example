@@ -16,4 +16,5 @@ sso_operator_permission_sets = [
   "testnet_operator_01_builder",
   "testnet_operator_02_approver",
 ]
-operator_alert_emails = ["playbuilder47+testnet_op1@gmail.com", "playbuilder47+testnet_op2@gmail.com"]   # lab.env의 OP1/OP2_EMAIL과 동일하게
+operator_alert_emails = ["dev.playbuilder47+testnet_op1@gmail.com", "dev.playbuilder47+testnet_op2@gmail.com"]   # lab.env의 OP1/OP2_EMAIL과 동일하게
+

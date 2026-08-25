@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "shared/scripts/render-codeowners.py"
 SOURCE = ROOT / ".github/CODEOWNERS"
+TEMPLATE = ROOT / "shared/templates/CODEOWNERS"
 OWNER = re.compile(
     r"^@(?P<org>[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,38}))/(?P<team>platform-approvers|security-approvers)$"
 )
@@ -31,10 +32,14 @@ EXPECTED = (
 
 
 def placeholder_source() -> str:
-    return re.sub(
-        r"@[A-Za-z0-9][A-Za-z0-9_.-]{0,38}/(?=(?:platform|security)-approvers\b)",
-        "@YOUR_GITHUB_ORG/",
-        SOURCE.read_text(encoding="utf-8"),
+    return TEMPLATE.read_text(encoding="utf-8")
+
+
+def parse_template_rules(body: str) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        tuple(line.split())
+        for line in body.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
     )
 
 
@@ -53,6 +58,14 @@ class CodeownersRenderTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def test_template_uses_only_the_expected_placeholder_rules(self) -> None:
+        body = placeholder_source()
+        self.assertEqual(parse_template_rules(body), tuple(
+            (path, f"@YOUR_GITHUB_ORG/{team}") for path, team in EXPECTED
+        ))
+        self.assertEqual(body.count("@YOUR_GITHUB_ORG/platform-approvers"), 5)
+        self.assertEqual(body.count("@YOUR_GITHUB_ORG/security-approvers"), 7)
 
     def test_source_uses_one_exact_org_owner_namespace(self) -> None:
         body = SOURCE.read_text(encoding="utf-8")

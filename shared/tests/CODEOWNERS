@@ -1,0 +1,13 @@
+# Render YOUR_GITHUB_ORG to the verified GitHub organization before installing this template as .github/CODEOWNERS.
+/.github/workflows/        @YOUR_GITHUB_ORG/platform-approvers
+/.github/CODEOWNERS        @YOUR_GITHUB_ORG/security-approvers
+/primary-aws/terraform/    @YOUR_GITHUB_ORG/platform-approvers
+/primary-aws/terraform/ci/runtime-inputs.json @YOUR_GITHUB_ORG/security-approvers
+/primary-aws/bootstrap/    @YOUR_GITHUB_ORG/security-approvers
+/primary-aws/bootstrap/cicd/parameters.json @YOUR_GITHUB_ORG/security-approvers
+/primary-aws/ansible/      @YOUR_GITHUB_ORG/platform-approvers
+/standby-aws/terraform/    @YOUR_GITHUB_ORG/platform-approvers
+/standby-aws/terraform/ci/runtime-inputs.json @YOUR_GITHUB_ORG/security-approvers
+/standby-aws/ansible/      @YOUR_GITHUB_ORG/platform-approvers
+/shared/                   @YOUR_GITHUB_ORG/security-approvers
+/drills/                   @YOUR_GITHUB_ORG/security-approvers
