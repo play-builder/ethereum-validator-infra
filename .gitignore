@@ -36,3 +36,10 @@ standby-aws/ansible/group_vars/all.yml
 standby-aws/terraform/*.tfvars
 standby-aws/terraform/*.tfplan
 standby-aws/terraform/tf.plan*
+
+# editor / OS
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
